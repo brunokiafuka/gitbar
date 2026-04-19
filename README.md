@@ -1,79 +1,46 @@
 # gitbar
 
-A native macOS menu bar app for tracking the pull requests and issues that need your attention. Implemented in Swift (SwiftUI + AppKit, borderless floating panel).
+`gitbar` is a lightweight macOS menu bar app that helps you keep up with GitHub work without living in the browser.
 
-## What it does
+Open it from the menu bar and quickly check:
 
-Click the menu bar icon to open a 440 × 580 panel with tabs:
+- PRs you opened
+- PRs waiting for your review
+- issues assigned to you
+- a simple stats snapshot
 
-- **All** — everything at a glance
-- **Mine** — PRs you authored that are still open
-- **Review** — PRs awaiting your review
-- **Issues** — issues assigned to you
-- **Stats** — KPI grid
+Click any row and it opens on GitHub right away.
 
-Rows show title, repo, status chips, PR number, and last-updated time. Clicking a row opens the PR/issue in your browser.
+## Screenshots
 
-## Authentication
+|                               Mine                               |                                Review                                 |                        Stats                        |
+| :--------------------------------------------------------------: | :-------------------------------------------------------------------: | :-------------------------------------------------: |
+| ![Mine tab - your open pull requests](docs/screenshots/mine.png) | ![Review tab - PRs awaiting your review](docs/screenshots/review.png) | ![Stats tab - KPI grid](docs/screenshots/stats.png) |
 
-Uses a **GitHub Personal Access Token** (classic `ghp_…` or fine-grained `github_pat_…`) read only from:
+## Quick start
 
-`~/.gitbar/config.json` → `github.token` (written by the Settings window or by hand)
+### What you need
 
-Example `~/.gitbar/config.json`:
+- macOS 14+
+- a GitHub personal access token (see [Authentication](#authentication))
 
-```json
-{
-  "github": {
-    "token": "ghp_xxxxxxxxxxxxxxxxxxxx"
-  }
-}
+If you are building from source, also install Xcode Command Line Tools:
+
+```bash
+xcode-select --install
 ```
 
-(Fine-grained tokens look like `github_pat_…` — same key.)
-
-The app creates `~/.gitbar/` on first save. If you used an older path (`~/.flo/config.json`), copy the `github` object into `~/.gitbar/config.json`.
-
-### Creating a token
-
-**Classic (simplest):** open [Create new token (classic)](https://github.com/settings/tokens/new?description=Gitbar&scopes=repo) — the note and **repo** scope are pre-selected; generate and paste into Gitbar Settings.
-
-**Fine-grained:** open [Create fine-grained token](https://github.com/settings/personal-access-tokens/new?name=Gitbar&description=Gitbar%20menu%20bar%20app), choose repository access, then under **Repository permissions** set at least:
-
-- **Pull requests** — Read and write (merge)
-- **Issues** — Read
-- **Metadata** — Read
-
-Paste the token into Gitbar Settings (gear in the tab bar): use **Paste**, **⌘V**, or the context menu — the field uses a native control so clipboard paste works reliably. Saving writes `~/.gitbar/config.json`.
-
-## Data sources
-
-All via the [GitHub REST API](https://docs.github.com/en/rest) using the token:
-
-| Query           | Endpoint                                                       |
-| --------------- | -------------------------------------------------------------- |
-| My open PRs     | `GET /search/issues?q=type:pr+state:open+author:@me`           |
-| Review requests | `GET /search/issues?q=type:pr+state:open+review-requested:@me` |
-| Assigned issues | `GET /search/issues?q=type:issue+state:open+assignee:@me`      |
-| PR review state | `GET /repos/{owner}/{repo}/pulls/{number}/reviews`             |
-
-## Prerequisites
-
-- macOS 14 or later
-- Swift toolchain (comes with Xcode Command Line Tools: `xcode-select --install`)
-- A GitHub PAT
-
-## Install
-
-**Homebrew** (recommended):
+### Install with Homebrew (recommended)
 
 ```bash
 brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar
 brew install gitbar
-gitbar                                  # launches the app
+gitbar
 ```
 
-**From source** (when hacking on it):
+That is it. `gitbar` launches the app.
+
+### Install from source
 
 ```bash
 git clone https://github.com/brunokiafuka/gitbar.git
@@ -82,34 +49,32 @@ cd gitbar
 open "$HOME/Applications/Gitbar.app"
 ```
 
-Both paths build a release binary and wrap it in a `.app` bundle with `LSUIElement = true` (no Dock icon). Homebrew drops it under `$(brew --prefix)/opt/gitbar/Gitbar.app`; the `./install` script drops it in `~/Applications`.
+The install script builds a release app and puts `Gitbar.app` in `~/Applications`.
 
-## Project layout
+## Authentication
 
-```
-gitbar/
-├── Package.swift
-├── Sources/Gitbar/
-│   ├── App.swift            # NSApplicationDelegate, NSStatusItem, floating NSPanel
-│   ├── Theme.swift          # colors, fonts, NSVisualEffectView wrapper
-│   ├── Config.swift         # token resolution + save
-│   ├── GitHub.swift         # REST client + Codable models
-│   ├── Store.swift          # ObservableObject state
-│   └── Views/
-│       ├── PanelView.swift    # panel with tabs
-│       ├── Rows.swift         # PR row, issue row
-│       ├── Chips.swift        # status chips, label pills, section headers
-│       ├── StatsView.swift    # KPI grid
-│       ├── TokenField.swift   # AppKit token field (paste-friendly)
-│       └── SettingsView.swift # token, notifications, refresh interval
-├── install                  # builds + installs the .app
-└── README.md
-```
+### Create a token
 
-## Status
+Classic token (fastest path):
 
-MVP. The UI follows the Gitbar design (Liquid Glass material, Raycast-style tabs and chips). Known gaps vs. the full design:
+- Open [Create new token (classic)](https://github.com/settings/tokens/new?description=Gitbar&scopes=repo)
+- Generate token
+- Paste it into Gitbar Settings
 
-- Merge / mark-ready actions are not wired yet (`PUT /repos/.../merge`, `markPullRequestReadyForReview`).
-- Failing-CI section requires the checks API (`GET /repos/.../commits/.../check-runs`) — currently omitted.
-- Stats are derived from the current fetch (open counts) rather than merged/reviewed over time.
+Fine-grained token:
+
+- Open [Create fine-grained token](https://github.com/settings/personal-access-tokens/new?name=Gitbar&description=Gitbar%20menu%20bar%20app)
+- Choose repository access
+- Set these permissions:
+  - Pull requests: Read and write (merge)
+  - Issues: Read
+  - Metadata: Read
+- Paste token into Gitbar Settings
+
+## Roadmap
+
+Current release is an MVP. Planned improvements:
+
+- [ ] merge and mark-ready actions in-app
+- [ ] failing CI section (check runs)
+- [ ] historical stats over time (instead of current snapshot only)
