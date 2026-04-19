@@ -65,6 +65,16 @@ All via the [GitHub REST API](https://docs.github.com/en/rest) using the token:
 
 ## Install
 
+**Homebrew** (recommended):
+
+```bash
+brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar
+brew install gitbar
+gitbar                                  # launches the app
+```
+
+**From source** (when hacking on it):
+
 ```bash
 git clone https://github.com/brunokiafuka/gitbar.git
 cd gitbar
@@ -72,7 +82,7 @@ cd gitbar
 open "$HOME/Applications/Gitbar.app"
 ```
 
-The installer builds a release binary, wraps it in a `.app` bundle with `LSUIElement = true` (no Dock icon), and drops it in `~/Applications`.
+Both paths build a release binary and wrap it in a `.app` bundle with `LSUIElement = true` (no Dock icon). Homebrew drops it under `$(brew --prefix)/opt/gitbar/Gitbar.app`; the `./install` script drops it in `~/Applications`.
 
 ## Project layout
 
