@@ -5,8 +5,8 @@ class Gitbar < Formula
   sha256 "57da6bee11a7589da74bcc694ec58943dafee91e831e77d026e0ab5a0d5a7a2c"
   head "https://github.com/brunokiafuka/gitbar.git", branch: "main"
 
-  depends_on :macos
   depends_on xcode: ["15.0", :build]
+  depends_on :macos
 
   def install
     system "swift", "build", "-c", "release", "--disable-sandbox"
@@ -80,7 +80,7 @@ class Gitbar < Formula
   end
 
   test do
-    assert_predicate prefix/"Gitbar.app/Contents/MacOS/Gitbar", :exist?
-    assert_predicate prefix/"Gitbar.app/Contents/Info.plist", :exist?
+    assert_path_exists prefix/"Gitbar.app/Contents/MacOS/Gitbar"
+    assert_path_exists prefix/"Gitbar.app/Contents/Info.plist"
   end
 end
