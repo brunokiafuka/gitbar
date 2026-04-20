@@ -214,7 +214,9 @@ struct SectionEditorView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    filters.append(FilterDraft())
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        filters.append(FilterDraft())
+                    }
                 } label: {
                     Label("Add filter", systemImage: "plus")
                         .font(.system(size: 11.5))
@@ -235,10 +237,16 @@ struct SectionEditorView: View {
         VStack(spacing: 6) {
             ForEach(Array(filter.conditions.enumerated()), id: \.element.id) { conditionIndex, _ in
                 conditionRow(filterIndex: filterIndex, conditionIndex: conditionIndex, isFirstInFilter: conditionIndex == 0)
+                    .transition(.asymmetric(
+                        insertion: AnyTransition.opacity.combined(with: .move(edge: .top)),
+                        removal: AnyTransition.opacity
+                    ))
             }
             HStack {
                 Button {
-                    filters[filterIndex].conditions.append(ConditionDraft())
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        filters[filterIndex].conditions.append(ConditionDraft())
+                    }
                 } label: {
                     Label("Add condition", systemImage: "plus")
                         .font(.system(size: 11.5))
@@ -251,7 +259,9 @@ struct SectionEditorView: View {
 
                 if filters.count > 1 {
                     Button {
-                        filters.remove(at: filterIndex)
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            _ = filters.remove(at: filterIndex)
+                        }
                     } label: {
                         Text("Remove filter")
                             .font(.system(size: 11.5))
@@ -265,7 +275,11 @@ struct SectionEditorView: View {
             .padding(.top, 2)
         }
         .padding(8)
-        .background(Theme.surfaceHi(colorScheme).opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.surfaceHi(colorScheme))
+                .opacity(0.2)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline(colorScheme), lineWidth: 0.5)
         )
@@ -324,7 +338,9 @@ struct SectionEditorView: View {
 
             Button {
                 if filters[filterIndex].conditions.count > 1 {
-                    filters[filterIndex].conditions.remove(at: conditionIndex)
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        _ = filters[filterIndex].conditions.remove(at: conditionIndex)
+                    }
                 }
             } label: {
                 Image(systemName: "minus.circle")

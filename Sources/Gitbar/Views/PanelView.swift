@@ -299,13 +299,13 @@ struct PanelView: View {
             Spacer(minLength: 4)
             Menu {
                 Button {
-                    managingSections = true
+                    withAnimation(.easeInOut(duration: 0.18)) { managingSections = true }
                 } label: {
                     Text("View filters")
                 }
                 if canCreateSectionForCurrentTab {
                     Button {
-                        editorState = .create(tab)
+                        withAnimation(.easeInOut(duration: 0.18)) { editorState = .create(tab) }
                     } label: {
                         Text("Create filter in \(tab.label)")
                     }
@@ -385,25 +385,25 @@ struct PanelView: View {
                     case .create: store.addSection(section)
                     case .edit: store.updateSection(section)
                     }
-                    editorState = nil
+                    withAnimation(.easeInOut(duration: 0.18)) { editorState = nil }
                 },
                 onDelete: {
                     if case .edit(let section) = mode, !section.isDefault {
                         store.deleteSection(id: section.id, tab: section.tab)
                     }
-                    editorState = nil
+                    withAnimation(.easeInOut(duration: 0.18)) { editorState = nil }
                 },
-                onCancel: { editorState = nil }
+                onCancel: { withAnimation(.easeInOut(duration: 0.18)) { editorState = nil } }
             )
         } else if managingSections {
             SectionsManagerView(
                 onCreate: { targetTab in
-                    editorState = .create(targetTab)
+                    withAnimation(.easeInOut(duration: 0.18)) { editorState = .create(targetTab) }
                 },
                 onEdit: { section in
-                    editorState = .edit(section)
+                    withAnimation(.easeInOut(duration: 0.18)) { editorState = .edit(section) }
                 },
-                onBack: { managingSections = false }
+                onBack: { withAnimation(.easeInOut(duration: 0.18)) { managingSections = false } }
             )
             .environmentObject(store)
         } else if tab == .stats {
@@ -604,7 +604,7 @@ struct PanelView: View {
             .menuStyle(.borderlessButton)
             Menu {
                 Button("Edit…") {
-                    editorState = .edit(section)
+                    withAnimation(.easeInOut(duration: 0.18)) { editorState = .edit(section) }
                 }
             } label: {
                 Image(systemName: "ellipsis")
