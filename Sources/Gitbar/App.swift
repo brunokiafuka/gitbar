@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupPanel() {
-        let rect = NSRect(x: 0, y: 0, width: 440, height: 580)
+        let rect = NSRect(x: 0, y: 0, width: 520, height: 620)
         panel = FloatingPanel(
             contentRect: rect,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -146,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func refreshBadge() {
         guard let button = statusItem.button else { return }
-        let total = store.myPRs.count + store.reviewRequests.count + store.issues.count
+        let total = store.badgeCount
         button.title = total > 0 ? " \(total)" : ""
         let changesOn = Self.defaultsBool("gitbar.notify.changesRequested", default: true)
         let changesCount = store.myPRsNeedingChanges.count
@@ -187,7 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            Task { @MainActor in self?.hidePanel() }
+            Task { @MainActor in
+                guard !EmojiPaletteState.isOpen else { return }
+                self?.hidePanel()
+            }
         }
 
         if store.hasToken { store.refresh() }

@@ -69,5 +69,5 @@ enum Theme {
     }
 
     static let mono     = Font.system(.caption, design: .monospaced)
-    static let monoTiny = Font.system(size: 10.5, design: .monospaced)
+    static let monoTiny = Font.system(size: 9.5, design: .monospaced)
 }

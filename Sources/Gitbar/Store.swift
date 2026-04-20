@@ -20,6 +20,7 @@ final class Store: ObservableObject {
     @Published var lastRefreshed: Date?
     @Published var errorMessage: String?
     @Published var token: String?
+    @Published var sectionsByTab: [PanelTab: [GitbarSection]] = [:]
 
     /// Stats tab (`StatsLoader` + GitHub Search / events).
     @Published private(set) var statsSnapshot: StatsSnapshot?
@@ -35,6 +36,7 @@ final class Store: ObservableObject {
 
     init() {
         self.token = Config.resolveToken()
+        self.sectionsByTab = Config.readSectionsWithMigration()
     }
 
     var hasToken: Bool {
@@ -55,6 +57,42 @@ final class Store: ObservableObject {
     /// Open PRs you authored whose latest review outcome is changes requested.
     var myPRsNeedingChanges: [GHIssue] {
         myPRs.filter { myPRReviewState[$0.id] == "CHANGES_REQUESTED" }
+    }
+
+    var badgeCount: Int {
+        let badgedSections = sectionsByTab.values
+            .flatMap { $0 }
+            .filter { $0.contributesToBadge }
+        guard !badgedSections.isEmpty else {
+            return myPRs.count + reviewRequests.count + issues.count
+        }
+
+        var ids = Set<Int>()
+        for section in badgedSections {
+            let source: [GHIssue]
+            switch section.tab {
+            case .mine:
+                source = myPRs
+            case .review:
+                source = reviewRequests
+            case .issues:
+                source = issues
+            case .all, .stats:
+                source = []
+            }
+            for row in source {
+                if SectionMatcher.matches(
+                    section: section,
+                    row: row,
+                    viewerLogin: myLogin,
+                    metadata: prRowMetadata[row.id],
+                    reviewState: myPRReviewState[row.id]
+                ) {
+                    ids.insert(row.id)
+                }
+            }
+        }
+        return ids.count
     }
 
     func refresh() {
@@ -139,6 +177,81 @@ final class Store: ObservableObject {
         if !trimmed.isEmpty {
             refresh()
         }
+    }
+
+    func sections(for tab: PanelTab) -> [GitbarSection] {
+        (sectionsByTab[tab] ?? []).sorted(by: { $0.order < $1.order })
+    }
+
+    func updateSection(_ section: GitbarSection) {
+        var next = sectionsByTab
+        var list = next[section.tab] ?? []
+        if let idx = list.firstIndex(where: { $0.id == section.id }) {
+            list[idx] = section
+            next[section.tab] = list
+            sectionsByTab = next
+            try? Config.saveSections(next)
+        }
+    }
+
+    func addSection(_ section: GitbarSection) {
+        var next = sectionsByTab
+        var list = next[section.tab] ?? []
+        var toInsert = section
+        toInsert.order = (list.map(\.order).max() ?? -1) + 1
+        list.append(toInsert)
+        next[section.tab] = list
+        sectionsByTab = next
+        try? Config.saveSections(next)
+    }
+
+    func deleteSection(id: UUID, tab: PanelTab) {
+        var next = sectionsByTab
+        guard var list = next[tab] else { return }
+        // Default sections are structural; refuse deletion even if called directly.
+        guard list.first(where: { $0.id == id })?.isDefault != true else { return }
+        list.removeAll { $0.id == id }
+        next[tab] = list
+        sectionsByTab = next
+        try? Config.saveSections(next)
+    }
+
+    /// Moves `id` within `tab`. When `targetID` is nil, appends to the end.
+    /// Ignores moves from other tabs (cross-tab drag not supported in v1).
+    func reorderSection(in tab: PanelTab, moving id: UUID, before targetID: UUID?) {
+        var next = sectionsByTab
+        guard var list = next[tab],
+              let fromIdx = list.firstIndex(where: { $0.id == id }) else { return }
+        let moved = list.remove(at: fromIdx)
+        if let targetID, let targetIdx = list.firstIndex(where: { $0.id == targetID }) {
+            list.insert(moved, at: targetIdx)
+        } else {
+            list.append(moved)
+        }
+        for i in list.indices { list[i].order = i }
+        next[tab] = list
+        sectionsByTab = next
+        try? Config.saveSections(next)
+    }
+
+    func toggleSectionCollapsed(tab: PanelTab, id: UUID) {
+        var next = sectionsByTab
+        guard var list = next[tab],
+              let idx = list.firstIndex(where: { $0.id == id }) else { return }
+        list[idx].collapsed.toggle()
+        next[tab] = list
+        sectionsByTab = next
+        try? Config.saveSections(next)
+    }
+
+    func updateSectionSort(tab: PanelTab, id: UUID, sort: SortChoice) {
+        var next = sectionsByTab
+        guard var list = next[tab],
+              let idx = list.firstIndex(where: { $0.id == id }) else { return }
+        list[idx].sort = sort
+        next[tab] = list
+        sectionsByTab = next
+        try? Config.saveSections(next)
     }
 
     /// Applies `UserDefaults` key `gitbar.refreshInterval` (30s / 60s / 5m / manual).
