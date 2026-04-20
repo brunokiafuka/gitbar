@@ -417,27 +417,27 @@ struct SectionEditorView: View {
                 selection: binding.ciStatuses
             )
         case .author:
-            TextField("login", text: binding.authorLogin)
+            TextField("GitHub username", text: binding.authorLogin)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
         case .reviewer:
-            TextField("login", text: binding.reviewerLogin)
+            TextField("GitHub username", text: binding.reviewerLogin)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
         case .assignee:
-            TextField("login", text: binding.assigneeLogin)
+            TextField("GitHub username", text: binding.assigneeLogin)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
         case .repository:
-            TextField("owner/repo, owner/repo", text: binding.repositoryText)
+            TextField("owner/repo (comma-separated)", text: binding.repositoryText)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
         case .label:
-            TextField("label name", text: binding.labelName)
+            TextField("e.g. bug, frontend", text: binding.labelName)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)

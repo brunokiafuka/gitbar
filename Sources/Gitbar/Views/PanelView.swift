@@ -136,15 +136,17 @@ struct PanelView: View {
         "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))"
     }
 
+    private let allTabPreviewLimit = 5
+
     private var navigableItems: [PanelListEntry] {
         switch tab {
         case .stats:
             return []
         case .all:
             var rows: [PanelListEntry] = []
-            rows.append(contentsOf: store.myPRs.map { PanelListEntry(id: "all-m-\($0.id)", htmlURL: $0.htmlUrl) })
-            rows.append(contentsOf: store.reviewRequests.map { PanelListEntry(id: "all-r-\($0.id)", htmlURL: $0.htmlUrl) })
-            rows.append(contentsOf: store.issues.map { PanelListEntry(id: "all-i-\($0.id)", htmlURL: $0.htmlUrl) })
+            rows.append(contentsOf: store.myPRs.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-m-\($0.id)", htmlURL: $0.htmlUrl) })
+            rows.append(contentsOf: store.reviewRequests.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-r-\($0.id)", htmlURL: $0.htmlUrl) })
+            rows.append(contentsOf: store.issues.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-i-\($0.id)", htmlURL: $0.htmlUrl) })
             return rows
         case .mine:
             return sectionEntries(for: .mine, sourceRows: store.myPRs)
@@ -428,7 +430,7 @@ struct PanelView: View {
                                 count: store.myPRs.count,
                                 accent: .secondary
                             )
-                            ForEach(store.myPRs) { pr in
+                            ForEach(Array(store.myPRs.prefix(allTabPreviewLimit))) { pr in
                                 PRRow(
                                     pr: pr,
                                     showAuthor: false,
@@ -438,6 +440,9 @@ struct PanelView: View {
                                 )
                                 .id("all-m-\(pr.id)")
                             }
+                            if store.myPRs.count > allTabPreviewLimit {
+                                viewAllButton(destination: .mine, remaining: store.myPRs.count - allTabPreviewLimit)
+                            }
                         }
                         if tab == .all, showReview, !store.reviewRequests.isEmpty {
                             SectionHeader(
@@ -446,7 +451,7 @@ struct PanelView: View {
                                 count: store.reviewRequests.count,
                                 accent: Theme.amber
                             )
-                            ForEach(store.reviewRequests) { pr in
+                            ForEach(Array(store.reviewRequests.prefix(allTabPreviewLimit))) { pr in
                                 PRRow(
                                     pr: pr,
                                     showAuthor: true,
@@ -454,6 +459,9 @@ struct PanelView: View {
                                     isSelected: isEntrySelected("all-r-\(pr.id)")
                                 )
                                 .id("all-r-\(pr.id)")
+                            }
+                            if store.reviewRequests.count > allTabPreviewLimit {
+                                viewAllButton(destination: .review, remaining: store.reviewRequests.count - allTabPreviewLimit)
                             }
                         }
                         if tab == .all, showIssues, !store.issues.isEmpty {
@@ -463,9 +471,12 @@ struct PanelView: View {
                                 count: store.issues.count,
                                 accent: Theme.green
                             )
-                            ForEach(store.issues) { issue in
+                            ForEach(Array(store.issues.prefix(allTabPreviewLimit))) { issue in
                                 IssueRow(issue: issue, isSelected: isEntrySelected("all-i-\(issue.id)"))
                                     .id("all-i-\(issue.id)")
+                            }
+                            if store.issues.count > allTabPreviewLimit {
+                                viewAllButton(destination: .issues, remaining: store.issues.count - allTabPreviewLimit)
                             }
                         }
                         if tab == .mine {
@@ -572,6 +583,28 @@ struct PanelView: View {
                 .id("all-\(tab.rawValue)-\(row.id)")
             }
         }
+    }
+
+    private func viewAllButton(destination: PanelTab, remaining: Int) -> some View {
+        Button {
+            switchToTab(destination)
+        } label: {
+            HStack(spacing: 6) {
+                Text("View all \(destination.label.lowercased()) (\(remaining) more)")
+                    .font(.system(size: 10.5, weight: .medium))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+            }
+            .foregroundStyle(Theme.blue)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
     }
 
     private func sectionHeader(tab: PanelTab, section: GitbarSection, count: Int) -> some View {
