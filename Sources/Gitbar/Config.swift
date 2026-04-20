@@ -13,33 +13,70 @@ enum Config {
     }
 
     static func readStoredToken() -> String? {
-        guard
-            let data = try? Data(contentsOf: configURL),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let gh = obj["github"] as? [String: Any],
-            let token = gh["token"] as? String
-        else { return nil }
-        return token
+        readRoot().github.token
     }
 
     static func saveToken(_ token: String) throws {
+        var root = readRoot()
+        root.github.token = token
+        try writeRoot(root)
+    }
+
+    static func readSectionsWithMigration() -> [PanelTab: [GitbarSection]] {
+        var root = readRoot()
+        if root.sections == nil && root.sectionsSeeded != true {
+            root.sections = GitbarSection.seededDefaults()
+            root.sectionsSeeded = true
+            try? writeRoot(root)
+        }
+        return root.sections ?? [:]
+    }
+
+    static func saveSections(_ sections: [PanelTab: [GitbarSection]]) throws {
+        var root = readRoot()
+        root.sections = sections
+        root.sectionsSeeded = true
+        try writeRoot(root)
+    }
+
+    static func withConfigMutation(_ mutate: (inout ConfigRoot) -> Void) throws {
+        var root = readRoot()
+        mutate(&root)
+        try writeRoot(root)
+    }
+}
+
+private extension Config {
+    static func readRoot() -> ConfigRoot {
+        guard let data = try? Data(contentsOf: configURL) else {
+            return ConfigRoot()
+        }
+        let decoder = JSONDecoder()
+        if let root = try? decoder.decode(ConfigRoot.self, from: data) {
+            return root
+        }
+        return ConfigRoot()
+    }
+
+    static func writeRoot(_ root: ConfigRoot) throws {
         let url = configURL
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        var root: [String: Any] = [:]
-        if let data = try? Data(contentsOf: url),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            root = existing
-        }
-        var gh = (root["github"] as? [String: Any]) ?? [:]
-        gh["token"] = token
-        root["github"] = gh
-        let out = try JSONSerialization.data(
-            withJSONObject: root,
-            options: [.prettyPrinted, .sortedKeys]
-        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let out = try encoder.encode(root)
         try out.write(to: url, options: .atomic)
     }
+}
+
+struct ConfigRoot: Codable {
+    struct GitHubConfig: Codable {
+        var token: String?
+    }
+
+    var github: GitHubConfig = .init()
+    var sections: [PanelTab: [GitbarSection]]?
+    var sectionsSeeded: Bool?
 }

@@ -50,6 +50,7 @@ struct GHIssue: Decodable, Identifiable, Hashable {
     let repositoryUrl: String
     let user: GHUser
     let labels: [GHLabel]
+    let assignees: [GHUser]?
     let draft: Bool?
     let pullRequest: GHPullRequestRef?
     /// Present on search/API responses; used for stats (merge latency).
@@ -58,7 +59,7 @@ struct GHIssue: Decodable, Identifiable, Hashable {
     let comments: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, number, title, state, labels, draft, user, comments
+        case id, number, title, state, labels, assignees, draft, user, comments
         case htmlUrl = "html_url"
         case repositoryUrl = "repository_url"
         case pullRequest = "pull_request"
@@ -156,7 +157,7 @@ struct GHCheckRun: Decodable {
 }
 
 /// CI aggregate for the menu bar row (left pill).
-enum CIPillKind: String, Equatable, Sendable {
+enum CIPillKind: String, Codable, Equatable, Sendable, Hashable, CaseIterable {
     case pass
     case fail
     case running

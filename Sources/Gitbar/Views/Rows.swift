@@ -78,7 +78,7 @@ struct PRRow: View {
                         draftBadge
                     }
                     Text(pr.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .truncationMode(.tail)
@@ -95,7 +95,7 @@ struct PRRow: View {
                     if showAuthor {
                         Text("·").foregroundStyle(Theme.faint.opacity(0.9))
                         Text("@\(pr.user.login)")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
 
@@ -109,7 +109,7 @@ struct PRRow: View {
                         HStack(spacing: 3) {
                             LucideRepoIconView(icon: .gitMergeConflict, size: 11, color: Theme.amber)
                             Text("conflict")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: 9.5, weight: .medium))
                         }
                         .foregroundStyle(Theme.amber)
                     }
@@ -118,10 +118,10 @@ struct PRRow: View {
                         Text("·").foregroundStyle(Theme.faint.opacity(0.9))
                         HStack(spacing: 4) {
                             Text("+\(m.additions)")
-                                .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                                 .foregroundStyle(Theme.green)
                             Text("-\(m.deletions)")
-                                .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                                 .foregroundStyle(Color(red: 0.92, green: 0.35, blue: 0.45))
                         }
                     }
@@ -130,7 +130,7 @@ struct PRRow: View {
                         Text("·").foregroundStyle(Theme.faint.opacity(0.9))
                         HStack(spacing: 3) {
                             LucideRepoIconView(icon: .messageSquareDiff, size: 11, color: .secondary)
-                            Text("\(pr.comments)").font(.system(size: 10.5))
+                            Text("\(pr.comments)").font(.system(size: 9.5))
                         }
                         .foregroundStyle(.secondary)
                     }
@@ -138,7 +138,7 @@ struct PRRow: View {
                     Spacer(minLength: 4)
 
                     Text(RelativeTime.short(pr.updated))
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 9.5))
                         .foregroundStyle(Theme.meta)
                 }
             }
@@ -179,7 +179,7 @@ struct PRRow: View {
                 LucideRepoIconView(icon: .circleDotDashed, size: 11, color: reviewLineColor)
             }
             Text(reviewLineLabel)
-                .font(.system(size: 10.5, weight: .medium))
+                .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(reviewLineColor)
         }
     }
@@ -227,7 +227,7 @@ struct IssueRow: View {
                 HStack(spacing: 8) {
                     IconDot(color: Theme.green)
                     Text(issue.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -247,12 +247,12 @@ struct IssueRow: View {
                     if issue.comments > 0 {
                         HStack(spacing: 3) {
                             LucideRepoIconView(icon: .messageSquareDiff, size: 11, color: .secondary)
-                            Text("\(issue.comments)").font(.system(size: 10.5))
+                            Text("\(issue.comments)").font(.system(size: 9.5))
                         }
                         .foregroundStyle(.secondary)
                     }
                     Text(RelativeTime.short(issue.updated))
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 9.5))
                         .foregroundStyle(Theme.meta)
                 }
             }
