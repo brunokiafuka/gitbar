@@ -47,15 +47,6 @@ struct StateChip: View {
     }
 }
 
-struct IconDot: View {
-    let color: Color
-
-    var body: some View {
-        LucideRepoIconView(icon: .circleDot, size: 12, color: color)
-            .frame(width: 16, height: 16)
-    }
-}
-
 // MARK: - PR row
 
 struct PRRow: View {
@@ -73,7 +64,9 @@ struct PRRow: View {
         Button(action: openInBrowser) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    CIPill(kind: metadata?.ci ?? .unknown)
+                    if let ci = metadata?.ci, ci != .unknown {
+                        CIPill(kind: ci)
+                    }
                     if pr.isDraft {
                         draftBadge
                     }
@@ -224,12 +217,12 @@ struct IssueRow: View {
     var body: some View {
         Button(action: openInBrowser) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    IconDot(color: Theme.green)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(issue.title)
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
                     Spacer(minLength: 4)
                     Text("#\(issue.number)")
                         .font(Theme.monoTiny)

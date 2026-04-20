@@ -57,12 +57,7 @@ struct SettingsView: View {
             }
 
             Section("Personal access token") {
-                Text("Classic (ghp_…) and fine-grained (github_pat_…) tokens both work. Grant access to every repo you care about, or All repositories.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(alignment: .center, spacing: 8) {
+                HStack(spacing: 6) {
                     TokenField(
                         text: $tokenField,
                         isSecure: !tokenVisible,
@@ -72,60 +67,69 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
 
-                    Button("Paste") {
-                        if let s = NSPasteboard.general.string(forType: .string) {
-                            tokenField = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
+                    Button {
+                        tokenVisible.toggle()
+                    } label: {
+                        Image(systemName: tokenVisible ? "eye.slash" : "eye")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 22)
+                            .contentShape(Rectangle())
                     }
-                    .help("Insert token from clipboard")
+                    .buttonStyle(.plain)
+                    .help(tokenVisible ? "Hide token" : "Show token")
 
-                    Button(tokenVisible ? "Hide" : "Show") { tokenVisible.toggle() }
                     Button("Save") { store.updateToken(tokenField) }
                         .buttonStyle(.borderedProminent)
-                        .disabled(tokenField.isEmpty)
+                        .disabled(tokenField.isEmpty || tokenField == store.token)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Required permissions")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text("Classic: enable the repo scope. Fine-grained: under Repository permissions, set at least:")
-                        .font(.system(size: 11))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Required scopes")
+                        .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(Theme.meta)
-                    scopeRow("Pull requests", desc: "Read and write (merge your PRs)")
-                    scopeRow("Issues", desc: "Read (assigned issues)")
-                    scopeRow("Metadata", desc: "Read (required for API access)")
+                    scopeRow("Pull requests", desc: "Read and write")
+                    scopeRow("Issues", desc: "Read")
+                    scopeRow("Metadata", desc: "Read")
                 }
                 .padding(.top, 2)
 
-                tokenNotice
+                HStack(spacing: 12) {
+                    Link("Create classic token", destination: Self.newClassicTokenURL)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .tint(Theme.blue)
+                    Text("·")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.faint)
+                    Link("Create fine-grained token", destination: Self.newFineGrainedTokenURL)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.top, 2)
+
+                Text("Gitbar only sees what this token can access. Classic tokens need the `repo` scope; fine-grained tokens need pull-request / issues / metadata read access.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Notifications") {
-                Toggle(isOn: $notifyReviews) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.blue)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Review requests")
-                        Text("Badge the menu bar icon when someone requests your review")
+                        Text("Coming soon — working on it :D")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Native macOS notifications for review requests, CI failures, and change requests.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    Spacer()
                 }
-                Toggle(isOn: $notifyCI) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("CI failures")
-                        Text("Notify when CI fails on your PRs")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: $notifyChangesRequested) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("PR needs changes")
-                        Text("Badge the menu bar icon when a reviewer requests changes on your PR")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                .padding(.vertical, 2)
             }
 
             Section("Behavior") {
@@ -168,6 +172,16 @@ struct SettingsView: View {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q", modifiers: [.command])
+
+                Link(destination: URL(string: "https://github.com/brunokiafuka/gitbar/issues/new")!) {
+                    HStack(spacing: 6) {
+                        Text("🐛")
+                            .font(.system(size: 12))
+                        Text("Is it buggy? 😖 Open an issue here")
+                            .font(.system(size: 12))
+                    }
+                }
+                .buttonStyle(.link)
             }
 
             Section {
@@ -227,42 +241,6 @@ struct SettingsView: View {
             )
     }
 
-    private var tokenNotice: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.amber)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Everything Gitbar sees is scoped to this token. Create, view, or rotate tokens on GitHub.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.primary.opacity(0.92))
-                    .fixedSize(horizontal: false, vertical: true)
-                Link(destination: Self.newClassicTokenURL) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "link.circle.fill")
-                            .font(.system(size: 11))
-                        Text("Create classic token (repo scope)")
-                            .font(.system(size: 11.5, weight: .semibold))
-                    }
-                }
-                .buttonStyle(.link)
-                .tint(Theme.blue)
-                Link(destination: Self.newFineGrainedTokenURL) {
-                    Text("Create fine-grained token")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.link)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.amber.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.amber.opacity(0.22), lineWidth: 0.5)
-        )
-    }
 
     private func scopeRow(_ name: String, desc: String) -> some View {
         HStack(spacing: 10) {
