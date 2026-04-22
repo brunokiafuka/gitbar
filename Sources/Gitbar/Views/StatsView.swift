@@ -155,12 +155,12 @@ struct StatsView: View {
         let s = store.statsSnapshot
         VStack(spacing: 10) {
             PaceBanner(
-                title: "Avg merge time",
-                subtitle: "Your merged PRs · open → merge",
-                value: formatMergeMinutes(s?.avgMergeMinutes),
+                title: "Typical merge time",
+                subtitle: mergeSubtitle(s),
+                value: formatMergeMinutes(s?.typicalMergeMinutes),
                 rightText: mergeTrendText(s),
                 icon: .timer,
-                rightPositiveGreen: (s?.avgMergePercentVsPrior ?? 1) <= 0
+                rightPositiveGreen: mergeTrendIsBetter(s)
             )
             PaceBanner(
                 title: "Commit streak",
@@ -182,9 +182,30 @@ struct StatsView: View {
         return r == 0 ? "\(h)h" : "\(h)h \(r)m"
     }
 
+    /// Explains what the number represents — including "no data" and "not enough samples" cases.
+    private func mergeSubtitle(_ s: StatsSnapshot?) -> String? {
+        guard let s else { return "Your merged PRs · open → merge" }
+        switch s.mergeSampleSize {
+        case 0: return "No merged PRs in this window"
+        case 1: return "Only 1 merged PR · need 3 for a typical"
+        case 2: return "Only 2 merged PRs · need 3 for a typical"
+        default: return "Median across \(s.mergeSampleSize) merged PRs"
+        }
+    }
+
+    /// Absolute delta vs prior — immune to the small-base blowup that made percent change read "2100% slower"
+    /// when the prior median was a few minutes. Color comes from `mergeTrendIsBetter`.
     private func mergeTrendText(_ s: StatsSnapshot?) -> String? {
-        guard let p = s?.avgMergePercentVsPrior else { return nil }
-        return String(format: "%+.0f%% vs prior", p)
+        guard let cur = s?.typicalMergeMinutes, let prev = s?.typicalMergeMinutesPrev else { return nil }
+        let delta = cur - prev
+        if delta == 0 { return "same pace" }
+        let mag = formatMergeMinutes(abs(delta))
+        return delta < 0 ? "\(mag) faster" : "\(mag) slower"
+    }
+
+    private func mergeTrendIsBetter(_ s: StatsSnapshot?) -> Bool {
+        guard let cur = s?.typicalMergeMinutes, let prev = s?.typicalMergeMinutesPrev else { return true }
+        return cur <= prev
     }
 }
 

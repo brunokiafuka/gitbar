@@ -31,10 +31,13 @@ struct StatsSnapshot: Equatable {
     var commits: Int
     var commitsTrend: Int?
 
-    /// Median minutes from PR open → merge for your merged PRs in the window (proxy for “pace”).
-    var avgMergeMinutes: Int?
-    /// Fractional change vs prior window; negative = faster merges.
-    var avgMergePercentVsPrior: Double?
+    /// Median minutes from PR open → merge. Nil when fewer than 3 merged PRs — a sample that small isn't a "typical."
+    var typicalMergeMinutes: Int?
+    /// Prior window's median, for computing absolute deltas in the UI.
+    /// Percent change would blow up on small bases (3 min → 66 min reads as "+2100%" and tells you nothing).
+    var typicalMergeMinutesPrev: Int?
+    /// Number of merged PRs backing the median — surfaced so the UI can disclose sample size.
+    var mergeSampleSize: Int
 
     var commitStreakDays: Int
     /// Last 7 calendar days (oldest → newest); whether you had ≥1 commit that day.
@@ -64,20 +67,28 @@ enum StatsLoader {
         return nil
     }
 
-    private static func mergedPRQuery(author: String, startDay: String, endDay: String) -> String {
-        "type:pr is:merged author:\(author) merged:\(startDay)..\(endDay)"
+    private static let isoFmt: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static func isoTs(_ d: Date) -> String { isoFmt.string(from: d) }
+
+    private static func mergedPRQuery(author: String, when: String) -> String {
+        "type:pr is:merged author:\(author) merged:\(when)"
     }
 
-    private static func reviewedMergedQuery(login: String, startDay: String, endDay: String) -> String {
-        "type:pr is:merged reviewed-by:\(login) merged:\(startDay)..\(endDay)"
+    private static func reviewedMergedQuery(login: String, when: String) -> String {
+        "type:pr is:merged reviewed-by:\(login) merged:\(when)"
     }
 
-    private static func closedIssuesQuery(login: String, startDay: String, endDay: String) -> String {
-        "type:issue is:closed assignee:\(login) closed:\(startDay)..\(endDay)"
+    private static func closedIssuesQuery(login: String, when: String) -> String {
+        "type:issue is:closed assignee:\(login) closed:\(when)"
     }
 
-    private static func commitsRangeQuery(author: String, startDay: String, endDay: String) -> String {
-        "author:\(author) committer-date:\(startDay)..\(endDay)"
+    private static func commitsRangeQuery(author: String, when: String) -> String {
+        "author:\(author) committer-date:\(when)"
     }
 
     /// Rolling 24h activity from `/user/events`.
@@ -107,7 +118,9 @@ enum StatsLoader {
         return (buckets, labels)
     }
 
-    private static func medianMergeMinutes(issues: [GHIssue]) -> Int? {
+    /// Returns the median open→merge time and the sample size that fed it.
+    /// Median is nil when fewer than 3 PRs merged — one outlier dominates smaller samples.
+    private static func mergeTimings(issues: [GHIssue]) -> (median: Int?, sampleSize: Int) {
         var minutes: [Double] = []
         for i in issues where i.isPR {
             guard let createdS = i.createdAt, let mergedS = i.pullRequest?.mergedAt,
@@ -115,14 +128,12 @@ enum StatsLoader {
             else { continue }
             minutes.append(m.timeIntervalSince(c) / 60)
         }
-        guard !minutes.isEmpty else { return nil }
+        let n = minutes.count
+        guard n >= 3 else { return (nil, n) }
         minutes.sort()
-        return Int(minutes[minutes.count / 2])
-    }
-
-    private static func percentChange(oldMinutes: Int?, newMinutes: Int?) -> Double? {
-        guard let o = oldMinutes, let n = newMinutes, o > 0 else { return nil }
-        return Double(n - o) / Double(o) * 100
+        let mid = minutes[n / 2]
+        let median = n.isMultiple(of: 2) ? (minutes[n / 2 - 1] + mid) / 2 : mid
+        return (Int(median.rounded()), n)
     }
 
     /// Local calendar days (yyyy-MM-dd) that had at least one push (proxy for “committed”), from the public event timeline.
@@ -169,27 +180,22 @@ enum StatsLoader {
         let todayStart = cal.startOfDay(for: now)
         let todayStr = dayString(todayStart)
 
-        let dCur0: String
-        let dCur1: String
-        let dPrev0: String
-        let dPrev1: String
-
+        // For `.today` we match UP TO THE CURRENT MOMENT on both sides — otherwise today (partial) vs yesterday (full 24h)
+        // makes every morning look like a regression. `.thisWeek` stays day-aligned since the framing is calendar-ish.
+        let curWhen: String
+        let prevWhen: String
         switch range {
         case .today:
-            dCur0 = todayStr
-            dCur1 = todayStr
-            let yStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
-            let yStr = dayString(yStart)
-            dPrev0 = yStr
-            dPrev1 = yStr
+            let priorStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
+            let priorEnd = cal.date(byAdding: .day, value: -1, to: now)!
+            curWhen = "\(isoTs(todayStart))..\(isoTs(now))"
+            prevWhen = "\(isoTs(priorStart))..\(isoTs(priorEnd))"
         case .thisWeek:
             let wStart = cal.date(byAdding: .day, value: -6, to: todayStart)!
-            dCur0 = dayString(wStart)
-            dCur1 = todayStr
             let pStart = cal.date(byAdding: .day, value: -13, to: todayStart)!
             let pEnd = cal.date(byAdding: .day, value: -7, to: todayStart)!
-            dPrev0 = dayString(pStart)
-            dPrev1 = dayString(pEnd)
+            curWhen = "\(dayString(wStart))..\(todayStr)"
+            prevWhen = "\(dayString(pStart))..\(dayString(pEnd))"
         }
 
         // One request first (event timeline); streak/dots use PushEvents from this feed — avoids N× commit search calls.
@@ -200,23 +206,20 @@ enum StatsLoader {
         let sevenDots = lastSevenDaysPushDots(pushDays: pushDays, calendar: cal, now: now)
 
         // Serialize Search API calls to stay under GitHub secondary rate limits (parallel bursts → 403).
-        let prsMerged = try await client.searchIssuesTotalCount(q: mergedPRQuery(author: login, startDay: dCur0, endDay: dCur1))
-        let prsReviewed = try await client.searchIssuesTotalCount(q: reviewedMergedQuery(login: login, startDay: dCur0, endDay: dCur1))
-        let issuesClosed = try await client.searchIssuesTotalCount(q: closedIssuesQuery(login: login, startDay: dCur0, endDay: dCur1))
-        let commits = try await client.searchCommitsTotalCount(q: commitsRangeQuery(author: login, startDay: dCur0, endDay: dCur1))
+        let prsMerged = try await client.searchIssuesTotalCount(q: mergedPRQuery(author: login, when: curWhen))
+        let prsReviewed = try await client.searchIssuesTotalCount(q: reviewedMergedQuery(login: login, when: curWhen))
+        let issuesClosed = try await client.searchIssuesTotalCount(q: closedIssuesQuery(login: login, when: curWhen))
+        let commits = try await client.searchCommitsTotalCount(q: commitsRangeQuery(author: login, when: curWhen))
 
-        let prsMergedP = try await client.searchIssuesTotalCount(q: mergedPRQuery(author: login, startDay: dPrev0, endDay: dPrev1))
-        let prsReviewedP = try await client.searchIssuesTotalCount(q: reviewedMergedQuery(login: login, startDay: dPrev0, endDay: dPrev1))
-        let issuesClosedP = try await client.searchIssuesTotalCount(q: closedIssuesQuery(login: login, startDay: dPrev0, endDay: dPrev1))
-        let commitsP = try await client.searchCommitsTotalCount(q: commitsRangeQuery(author: login, startDay: dPrev0, endDay: dPrev1))
+        let prsMergedP = try await client.searchIssuesTotalCount(q: mergedPRQuery(author: login, when: prevWhen))
+        let prsReviewedP = try await client.searchIssuesTotalCount(q: reviewedMergedQuery(login: login, when: prevWhen))
+        let issuesClosedP = try await client.searchIssuesTotalCount(q: closedIssuesQuery(login: login, when: prevWhen))
+        let commitsP = try await client.searchCommitsTotalCount(q: commitsRangeQuery(author: login, when: prevWhen))
 
-        let mergeSampleQ = mergedPRQuery(author: login, startDay: dCur0, endDay: dCur1)
-        let mergeSamplePrevQ = mergedPRQuery(author: login, startDay: dPrev0, endDay: dPrev1)
-        let mi = try await client.searchIssues(q: mergeSampleQ, perPage: 30)
-        let mip = try await client.searchIssues(q: mergeSamplePrevQ, perPage: 30)
-        let avgMerge = medianMergeMinutes(issues: mi)
-        let avgMergePrev = medianMergeMinutes(issues: mip)
-        let mergePct = percentChange(oldMinutes: avgMergePrev, newMinutes: avgMerge)
+        let mi = try await client.searchIssues(q: mergedPRQuery(author: login, when: curWhen), perPage: 30)
+        let mip = try await client.searchIssues(q: mergedPRQuery(author: login, when: prevWhen), perPage: 30)
+        let cur = mergeTimings(issues: mi)
+        let prev = mergeTimings(issues: mip)
 
         return StatsSnapshot(
             activityBuckets: buckets,
@@ -229,8 +232,9 @@ enum StatsLoader {
             issuesClosedTrend: issuesClosed - issuesClosedP,
             commits: commits,
             commitsTrend: commits - commitsP,
-            avgMergeMinutes: avgMerge,
-            avgMergePercentVsPrior: mergePct,
+            typicalMergeMinutes: cur.median,
+            typicalMergeMinutesPrev: prev.median,
+            mergeSampleSize: cur.sampleSize,
             commitStreakDays: streakDays,
             lastSevenDaysCommitted: sevenDots
         )

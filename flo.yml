@@ -1,0 +1,7 @@
+project: "Gitbar"
+
+commands:
+  app-run:
+    description: Run the app
+    command: ./install && open ~/Applications/Gitbar.app
+    aliases: [ar]
