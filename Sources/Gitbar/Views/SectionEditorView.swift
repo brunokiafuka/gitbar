@@ -56,7 +56,7 @@ struct SectionEditorView: View {
             _name = State(initialValue: "")
             _icon = State(initialValue: nil)
             _visibility = State(initialValue: .visible)
-            _contributesToBadge = State(initialValue: false)
+            _contributesToBadge = State(initialValue: true)
             _filters = State(initialValue: [FilterDraft(defaultCondition: Self.defaultCondition(for: mode.tab))])
         case .edit(let section):
             _name = State(initialValue: section.name)
@@ -305,9 +305,9 @@ struct SectionEditorView: View {
 
     private var badgeSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            fieldLabel("Badge count")
+            fieldLabel("Count pill")
             Toggle(isOn: $contributesToBadge) {
-                Text("Items in this section add to the inbox badge count")
+                Text("Show a count pill on this section's header")
                     .font(.system(size: 11.5))
             }
             .toggleStyle(.checkbox)
@@ -615,7 +615,7 @@ struct SectionEditorView: View {
         switch visibility {
         case .visible: return "Section shows expanded in the tab."
         case .collapsedByDefault: return "Section shows collapsed until you expand it."
-        case .hidden: return "Section doesn't render. Still counts toward the badge if enabled."
+        case .hidden: return "Section doesn't render in the panel."
         }
     }
 }

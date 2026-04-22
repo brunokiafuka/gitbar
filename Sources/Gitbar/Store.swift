@@ -60,39 +60,7 @@ final class Store: ObservableObject {
     }
 
     var badgeCount: Int {
-        let badgedSections = sectionsByTab.values
-            .flatMap { $0 }
-            .filter { $0.contributesToBadge }
-        guard !badgedSections.isEmpty else {
-            return myPRs.count + reviewRequests.count + issues.count
-        }
-
-        var ids = Set<Int>()
-        for section in badgedSections {
-            let source: [GHIssue]
-            switch section.tab {
-            case .mine:
-                source = myPRs
-            case .review:
-                source = reviewRequests
-            case .issues:
-                source = issues
-            case .all, .stats:
-                source = []
-            }
-            for row in source {
-                if SectionMatcher.matches(
-                    section: section,
-                    row: row,
-                    viewerLogin: myLogin,
-                    metadata: prRowMetadata[row.id],
-                    reviewState: myPRReviewState[row.id]
-                ) {
-                    ids.insert(row.id)
-                }
-            }
-        }
-        return ids.count
+        myPRs.count + reviewRequests.count + issues.count
     }
 
     func refresh() {
