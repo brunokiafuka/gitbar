@@ -616,12 +616,14 @@ struct PanelView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
-            Text("\(count)")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(Theme.surfaceHi(colorScheme), in: Capsule())
+            if section.contributesToBadge {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Theme.surfaceHi(colorScheme), in: Capsule())
+            }
             Spacer()
             Menu {
                 ForEach(SortChoice.allCases, id: \.rawValue) { choice in
