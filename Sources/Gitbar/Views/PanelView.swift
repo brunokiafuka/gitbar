@@ -34,6 +34,7 @@ private struct TabSectionRows: Identifiable {
 
 struct PanelView: View {
     @EnvironmentObject var store: Store
+    @EnvironmentObject var updater: Updater
     @Environment(\.colorScheme) private var colorScheme
     @State private var tab: PanelTab = .all
     @State private var selectedIndex: Int = 0
@@ -664,7 +665,7 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 avatar
                 Text("@\(store.myLogin ?? "signed out")")
@@ -691,12 +692,21 @@ struct PanelView: View {
                 legend("↵", "open")
                 legend("esc", "close")
             }
-            Text("⌘1–5 tabs · ⌘, settings · ⌘R refresh · ⌘W close · ⌘Q quit")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Theme.faint)
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(alignment: .bottom, spacing: 12) {
+                if updater.hasUpdate, let url = updater.releaseURL, let tag = updater.latestTag {
+                    updateLink(tag: tag, url: url)
+                } else if let version = updater.currentVersion {
+                    Text("v\(version)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.faint)
+                }
+                Spacer(minLength: 8)
+                Text("⌘1–5 tabs · ⌘, settings · ⌘R refresh · ⌘W close · ⌘Q quit")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Theme.faint)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -707,6 +717,21 @@ struct PanelView: View {
             Kbd(text: k)
             Text(l).font(.system(size: 10.5)).foregroundStyle(Theme.meta)
         }
+    }
+
+    private func updateLink(tag: String, url: URL) -> some View {
+        Button {
+            NSWorkspace.shared.open(url)
+        } label: {
+            HStack(spacing: 4) {
+                Circle().fill(Theme.blue).frame(width: 4, height: 4)
+                Text("Update \(tag)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("A new Gitbar release is available — open release notes")
     }
 
     private var avatar: some View {

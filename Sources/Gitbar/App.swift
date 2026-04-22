@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel!
     private var settingsWindow: NSWindow?
     private let store = Store()
+    private let updater = Updater()
     private var appearanceObservation: NSKeyValueObservation?
     private var clickOutsideMonitor: Any?
     private var localKeyMonitor: Any?
@@ -31,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.refresh()
             store.reconfigurePollingFromDefaults()
         }
+
+        updater.start()
 
         // ImageRenderer often yields nil on the first pass; refresh once the run loop has ticked.
         DispatchQueue.main.async { [weak self] in
@@ -150,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = NSHostingController(
             rootView: PanelView(onOpenSettings: { [weak self] in self?.openSettings() })
                 .environmentObject(store)
+                .environmentObject(updater)
         )
         host.view.wantsLayer = true
         host.view.layer?.cornerRadius = 14
