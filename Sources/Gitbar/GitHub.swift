@@ -25,6 +25,11 @@ private struct GHAPIErrorBody: Decodable {
     let message: String?
 }
 
+private struct GHMergeResponse: Decodable {
+    let merged: Bool
+    let message: String?
+}
+
 struct GHLabel: Decodable, Hashable, Identifiable {
     let id: Int
     let name: String
@@ -170,6 +175,7 @@ struct PRRowMetadata: Equatable, Sendable {
     var additions: Int
     var deletions: Int
     var hasMergeConflict: Bool
+    var mergeableState: String?
 }
 
 enum GHError: LocalizedError {
@@ -243,6 +249,29 @@ actor GitHubClient {
         guard let url = comps.url else { throw GHError.network("bad check-runs URL") }
         let data = try await get(url: url)
         return try JSONDecoder().decode(GHCheckRunsResponse.self, from: data).checkRuns
+    }
+
+    func markReadyForReview(repo: String, number: Int) async throws {
+        let url = reposURL(repo: repo, path: ["pulls", "\(number)"])
+        let body = try JSONSerialization.data(withJSONObject: ["draft": false], options: [])
+        _ = try await send(url: url, method: "PATCH", body: body)
+    }
+
+    func mergePullRequestSquash(repo: String, number: Int, commitTitle: String? = nil, commitMessage: String? = nil) async throws {
+        let url = reposURL(repo: repo, path: ["pulls", "\(number)", "merge"])
+        var payload: [String: Any] = ["merge_method": "squash"]
+        if let commitTitle, !commitTitle.isEmpty {
+            payload["commit_title"] = commitTitle
+        }
+        if let commitMessage, !commitMessage.isEmpty {
+            payload["commit_message"] = commitMessage
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let data = try await send(url: url, method: "PUT", body: body)
+        let decoded = try JSONDecoder().decode(GHMergeResponse.self, from: data)
+        if !decoded.merged {
+            throw GHError.http(409, decoded.message ?? "GitHub did not merge this pull request")
+        }
     }
 
     /// Maps GitHub check runs to a single CI pill for the row.
@@ -352,11 +381,20 @@ actor GitHubClient {
     }
 
     private func get(url: URL) async throws -> Data {
+        try await send(url: url, method: "GET", body: nil)
+    }
+
+    private func send(url: URL, method: String, body: Data?) async throws -> Data {
         var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.httpBody = body
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         req.setValue("gitbar/0.1", forHTTPHeaderField: "User-Agent")
+        if body != nil {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         do {
             let (data, resp) = try await session.data(for: req)
             guard let http = resp as? HTTPURLResponse else {

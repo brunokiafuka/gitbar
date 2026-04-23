@@ -1,6 +1,16 @@
 import Foundation
 import Combine
 
+enum PRActionKind: Hashable {
+    case markReady
+    case merge
+}
+
+struct PRActionState: Equatable {
+    var inFlight: Set<PRActionKind> = []
+    var errors: [PRActionKind: String] = [:]
+}
+
 extension Notification.Name {
     static let gitbarStoreDidUpdate = Notification.Name("gitbarStoreDidUpdate")
 }
@@ -21,6 +31,7 @@ final class Store: ObservableObject {
     @Published var errorMessage: String?
     @Published var token: String?
     @Published var sectionsByTab: [PanelTab: [GitbarSection]] = [:]
+    @Published var prActionStates: [String: PRActionState] = [:]
 
     /// Stats tab (`StatsLoader` + GitHub Search / events).
     @Published private(set) var statsSnapshot: StatsSnapshot?
@@ -66,6 +77,56 @@ final class Store: ObservableObject {
     func refresh() {
         refreshTask?.cancel()
         refreshTask = Task { await self.runRefresh() }
+    }
+
+    func isPRActionInFlight(_ kind: PRActionKind, for pr: GHIssue) -> Bool {
+        prActionStates[prActionKey(pr)]?.inFlight.contains(kind) == true
+    }
+
+    func prActionError(_ kind: PRActionKind, for pr: GHIssue) -> String? {
+        prActionStates[prActionKey(pr)]?.errors[kind]
+    }
+
+    func markReady(pr: GHIssue) async {
+        guard let token, !token.isEmpty else {
+            setPRActionError(kind: .markReady, for: pr, message: "No GitHub token configured")
+            return
+        }
+        let key = prActionKey(pr)
+        guard !isPRActionInFlight(.markReady, for: pr) else { return }
+        setPRActionInFlight(kind: .markReady, for: key, enabled: true)
+        clearPRActionError(kind: .markReady, for: key)
+        let client = GitHubClient(token: token)
+        do {
+            try await client.markReadyForReview(repo: pr.repoFull, number: pr.number)
+            setPRActionInFlight(kind: .markReady, for: key, enabled: false)
+            clearPRActionError(kind: .markReady, for: key)
+            refresh()
+        } catch {
+            setPRActionInFlight(kind: .markReady, for: key, enabled: false)
+            setPRActionError(kind: .markReady, for: pr, message: error.localizedDescription)
+        }
+    }
+
+    func merge(pr: GHIssue) async {
+        guard let token, !token.isEmpty else {
+            setPRActionError(kind: .merge, for: pr, message: "No GitHub token configured")
+            return
+        }
+        let key = prActionKey(pr)
+        guard !isPRActionInFlight(.merge, for: pr) else { return }
+        setPRActionInFlight(kind: .merge, for: key, enabled: true)
+        clearPRActionError(kind: .merge, for: key)
+        let client = GitHubClient(token: token)
+        do {
+            try await client.mergePullRequestSquash(repo: pr.repoFull, number: pr.number)
+            setPRActionInFlight(kind: .merge, for: key, enabled: false)
+            clearPRActionError(kind: .merge, for: key)
+            refresh()
+        } catch {
+            setPRActionInFlight(kind: .merge, for: key, enabled: false)
+            setPRActionError(kind: .merge, for: pr, message: error.localizedDescription)
+        }
     }
 
     func loadStats(range: StatsRange) async {
@@ -140,6 +201,7 @@ final class Store: ObservableObject {
             statsError = nil
             errorMessage = nil
             lastRefreshed = nil
+            prActionStates = [:]
         }
         reconfigurePollingFromDefaults()
         if !trimmed.isEmpty {
@@ -301,7 +363,8 @@ final class Store: ObservableObject {
                                 ci: ci,
                                 additions: detail.additions,
                                 deletions: detail.deletions,
-                                hasMergeConflict: conflict
+                                hasMergeConflict: conflict,
+                                mergeableState: detail.mergeableState?.lowercased()
                             )
                         )
                     } catch {
@@ -315,5 +378,32 @@ final class Store: ObservableObject {
             }
             return out
         }
+    }
+
+    private func prActionKey(_ pr: GHIssue) -> String {
+        "\(pr.repoFull)#\(pr.number)"
+    }
+
+    private func setPRActionInFlight(kind: PRActionKind, for key: String, enabled: Bool) {
+        var state = prActionStates[key] ?? PRActionState()
+        if enabled {
+            state.inFlight.insert(kind)
+        } else {
+            state.inFlight.remove(kind)
+        }
+        prActionStates[key] = state
+    }
+
+    private func setPRActionError(kind: PRActionKind, for pr: GHIssue, message: String) {
+        let key = prActionKey(pr)
+        var state = prActionStates[key] ?? PRActionState()
+        state.errors[kind] = message
+        prActionStates[key] = state
+    }
+
+    private func clearPRActionError(kind: PRActionKind, for key: String) {
+        guard var state = prActionStates[key] else { return }
+        state.errors.removeValue(forKey: kind)
+        prActionStates[key] = state
     }
 }
