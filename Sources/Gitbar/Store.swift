@@ -356,6 +356,12 @@ final class Store: ObservableObject {
                         } catch {
                             ci = .unknown
                         }
+                        let canUserMerge: Bool
+                        do {
+                            canUserMerge = try await client.canUserPushToRepo(repo) ?? true
+                        } catch {
+                            canUserMerge = true
+                        }
                         let conflict = detail.mergeableState?.lowercased() == "dirty"
                         return (
                             pr.id,
@@ -364,7 +370,8 @@ final class Store: ObservableObject {
                                 additions: detail.additions,
                                 deletions: detail.deletions,
                                 hasMergeConflict: conflict,
-                                mergeableState: detail.mergeableState?.lowercased()
+                                mergeableState: detail.mergeableState?.lowercased(),
+                                canUserMerge: canUserMerge
                             )
                         )
                     } catch {

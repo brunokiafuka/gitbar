@@ -203,7 +203,7 @@ struct PRRow: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(store.isPRActionInFlight(.markReady, for: pr))
-                } else {
+                } else if canShowMergeButton {
                     Button {
                         Task { await store.merge(pr: pr) }
                     } label: {
@@ -218,7 +218,7 @@ struct PRRow: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(store.isPRActionInFlight(.merge, for: pr) || !canMerge)
-                } 
+                }
                 Spacer(minLength: 0)
             }
 
@@ -240,6 +240,11 @@ struct PRRow: View {
         guard !pr.isDraft else { return false }
         guard let state = metadata?.mergeableState else { return false }
         return state == "clean" || state == "has_hooks"
+    }
+
+    private var canShowMergeButton: Bool {
+        guard !pr.isDraft else { return false }
+        return metadata?.canUserMerge != false
     }
 
     private var mergeDisabledReason: String? {

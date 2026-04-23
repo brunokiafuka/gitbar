@@ -161,6 +161,14 @@ struct GHCheckRun: Decodable {
     let conclusion: String?
 }
 
+private struct GHRepoResponse: Decodable {
+    let permissions: GHRepoPermissions?
+}
+
+private struct GHRepoPermissions: Decodable {
+    let push: Bool?
+}
+
 /// CI aggregate for the menu bar row (left pill).
 enum CIPillKind: String, Codable, Equatable, Sendable, Hashable, CaseIterable {
     case pass
@@ -176,6 +184,7 @@ struct PRRowMetadata: Equatable, Sendable {
     var deletions: Int
     var hasMergeConflict: Bool
     var mergeableState: String?
+    var canUserMerge: Bool
 }
 
 enum GHError: LocalizedError {
@@ -249,6 +258,13 @@ actor GitHubClient {
         guard let url = comps.url else { throw GHError.network("bad check-runs URL") }
         let data = try await get(url: url)
         return try JSONDecoder().decode(GHCheckRunsResponse.self, from: data).checkRuns
+    }
+
+    func canUserPushToRepo(_ repo: String) async throws -> Bool? {
+        let url = reposURL(repo: repo, path: [])
+        let data = try await get(url: url)
+        let decoded = try JSONDecoder().decode(GHRepoResponse.self, from: data)
+        return decoded.permissions?.push
     }
 
     func markReadyForReview(repo: String, number: Int) async throws {
