@@ -38,10 +38,18 @@ struct PRStatusChip: View {
 
 struct AssigneeChip: View {
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var store: Store
     let login: String
 
+    private var displayText: String {
+        if let me = store.myLogin, login.caseInsensitiveCompare(me) == .orderedSame {
+            return "@me"
+        }
+        return "@\(login)"
+    }
+
     var body: some View {
-        Text("@\(login)")
+        Text(displayText)
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)

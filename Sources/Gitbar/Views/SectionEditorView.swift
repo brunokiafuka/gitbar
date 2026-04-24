@@ -408,7 +408,7 @@ struct SectionEditorView: View {
     @ViewBuilder
     private func operatorPicker(for binding: Binding<ConditionDraft>) -> some View {
         switch binding.wrappedValue.field {
-        case .prStatus, .ciStatus, .reviewer, .assignee, .repository, .label:
+        case .prStatus, .ciStatus, .reviewer, .assignee, .repository, .label, .reviewedByMeState:
             Picker("", selection: binding.setOp) {
                 Text("is").tag(SectionSetOp.includes)
                 Text("is not").tag(SectionSetOp.excludes)
@@ -494,6 +494,15 @@ struct SectionEditorView: View {
             .labelsHidden()
             .controlSize(.small)
             .frame(width: 150)
+        case .reviewedByMeState:
+            multiSelectMenu(
+                title: summary(
+                    for: binding.wrappedValue.reviewedByMeStates.map(\.label),
+                    placeholder: "Select review"
+                ),
+                all: ReviewedByMeStateValue.allCases.map { ($0, $0.label) },
+                selection: binding.reviewedByMeStates
+            )
         }
     }
 
@@ -641,8 +650,10 @@ struct SectionEditorView: View {
         switch tab {
         case .issues:
             return [.prStatus, .author, .assignee, .repository, .label]
-        case .mine, .review:
+        case .mine:
             return [.prStatus, .author, .assignee, .repository, .label, .ciStatus, .draft]
+        case .review:
+            return [.prStatus, .author, .assignee, .repository, .label, .ciStatus, .draft, .reviewedByMeState]
         case .all, .stats:
             return [.prStatus, .author, .repository, .label]
         }
@@ -694,9 +705,10 @@ struct ConditionDraft: Identifiable, Equatable {
     var labelName: String = ""
     var isDraftValue: Bool = true
     var hasMergeConflictValue: Bool = true
+    var reviewedByMeStates: Set<ReviewedByMeStateValue> = [.changesRequested, .commented]
 
     enum Field: String, CaseIterable, Identifiable, Hashable {
-        case prStatus, author, reviewer, assignee, repository, label, ciStatus, draft, mergeConflict
+        case prStatus, author, reviewer, assignee, repository, label, ciStatus, draft, mergeConflict, reviewedByMeState
 
         var id: String { rawValue }
         func label(for tab: PanelTab) -> String {
@@ -710,6 +722,7 @@ struct ConditionDraft: Identifiable, Equatable {
             case .ciStatus: return "CI status"
             case .draft: return "Draft"
             case .mergeConflict: return "Merge conflict"
+            case .reviewedByMeState: return "Your review"
             }
         }
     }
@@ -751,6 +764,10 @@ struct ConditionDraft: Identifiable, Equatable {
         case .hasMergeConflict(let isOn):
             field = .mergeConflict
             hasMergeConflictValue = isOn
+        case .reviewedByMeState(let op, let values):
+            field = .reviewedByMeState
+            setOp = op
+            reviewedByMeStates = Set(values)
         }
     }
 
@@ -789,6 +806,9 @@ struct ConditionDraft: Identifiable, Equatable {
             return .repository(op: setOp, repos: repos)
         case .mergeConflict:
             return .hasMergeConflict(is: hasMergeConflictValue)
+        case .reviewedByMeState:
+            guard !reviewedByMeStates.isEmpty else { return nil }
+            return .reviewedByMeState(op: setOp, values: Array(reviewedByMeStates))
         }
     }
 }

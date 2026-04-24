@@ -138,7 +138,7 @@ struct PanelView: View {
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .map { "\($0.key.uuidString):\($0.value.map(\.id))" }
             .joined(separator: ",")
-        return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customIssueIds)"
+        return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.reviewedByMePRs.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customIssueIds)"
     }
 
     private let allTabPreviewLimit = 5
@@ -156,7 +156,7 @@ struct PanelView: View {
         case .mine:
             return sectionEntries(for: .mine, sourceRows: store.myPRs)
         case .review:
-            return sectionEntries(for: .review, sourceRows: store.reviewRequests)
+            return sectionEntries(for: .review, sourceRows: store.reviewTabSourceRows)
         case .issues:
             return sectionEntries(for: .issues, sourceRows: store.issues)
         }
@@ -188,20 +188,33 @@ struct PanelView: View {
 
     /// Rows for a single section. Issues-tab sections read remotely-fetched rows from the store
     /// (each section runs its filters as a GitHub search). PR-tab sections filter `sourceRows`
-    /// locally via the matcher.
+    /// locally via the matcher, with the Review tab splitting between the review-request queue
+    /// and reviewed-by-me PRs depending on the section's conditions.
     private func rowsForSection(_ section: GitbarSection, sourceRows: [GHIssue]) -> [GHIssue] {
         if section.tab == .issues {
             return store.issuesBySectionId[section.id] ?? []
         }
-        return sourceRows.filter {
+        let effectiveSource = sectionSource(for: section, tabSource: sourceRows)
+        return effectiveSource.filter {
             SectionMatcher.matches(
                 section: section,
                 row: $0,
                 viewerLogin: store.myLogin,
                 metadata: store.prRowMetadata[$0.id],
-                reviewState: store.myPRReviewState[$0.id]
+                reviewState: reviewState(for: $0, section: section)
             )
         }
+    }
+
+    private func sectionSource(for section: GitbarSection, tabSource: [GHIssue]) -> [GHIssue] {
+        guard section.tab == .review else { return tabSource }
+        return section.targetsReviewedByMe ? store.reviewedByMePRs : store.reviewRequests
+    }
+
+    private func reviewState(for row: GHIssue, section: GitbarSection) -> String? {
+        section.targetsReviewedByMe
+            ? store.viewerReviewState[row.id]
+            : store.myPRReviewState[row.id]
     }
 
     private func unmatchedRows(for tab: PanelTab, sourceRows: [GHIssue]) -> [GHIssue] {
@@ -210,7 +223,10 @@ struct PanelView: View {
                 .flatMap(\.rows)
                 .map(\.id)
         )
-        return sourceRows.filter { !matchedIDs.contains($0.id) }
+        // On the Review tab, the catch-all only surfaces PRs awaiting your review.
+        // Reviewed-by-me PRs only belong in their dedicated sections (e.g. Waiting on author).
+        let eligible: [GHIssue] = tab == .review ? store.reviewRequests : sourceRows
+        return eligible.filter { !matchedIDs.contains($0.id) }
     }
 
     private func sort(_ rows: [GHIssue], by choice: SortChoice) -> [GHIssue] {
@@ -448,7 +464,7 @@ struct PanelView: View {
                             ForEach(Array(store.myPRs.prefix(allTabPreviewLimit))) { pr in
                                 PRRow(
                                     pr: pr,
-                                    showAuthor: false,
+                                    showAuthor: true,
                                     reviewState: store.myPRReviewState[pr.id],
                                     metadata: store.prRowMetadata[pr.id],
                                     isSelected: isEntrySelected("all-m-\(pr.id)")
@@ -495,10 +511,10 @@ struct PanelView: View {
                             }
                         }
                         if tab == .mine {
-                            sectionDrivenList(tab: .mine, sourceRows: store.myPRs, showAuthor: false)
+                            sectionDrivenList(tab: .mine, sourceRows: store.myPRs, showAuthor: true)
                         }
                         if tab == .review {
-                            sectionDrivenList(tab: .review, sourceRows: store.reviewRequests, showAuthor: true)
+                            sectionDrivenList(tab: .review, sourceRows: store.reviewTabSourceRows, showAuthor: true)
                         }
                         if tab == .issues {
                             sectionDrivenIssues(tab: .issues, sourceRows: store.issues)
@@ -536,7 +552,8 @@ struct PanelView: View {
                     PRRow(
                         pr: row,
                         showAuthor: showAuthor,
-                        reviewState: store.myPRReviewState[row.id],
+                        reviewState: reviewState(for: row, section: sectionRows.section),
+                        reviewIsViewer: sectionRows.section.targetsReviewedByMe,
                         metadata: store.prRowMetadata[row.id],
                         isSelected: isEntrySelected("sec-\(sectionRows.section.id.uuidString)-\(row.id)")
                     )

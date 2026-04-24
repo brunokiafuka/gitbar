@@ -9,6 +9,7 @@ extension Notification.Name {
 final class Store: ObservableObject {
     @Published var myPRs: [GHIssue] = []
     @Published var reviewRequests: [GHIssue] = []
+    @Published var reviewedByMePRs: [GHIssue] = []
     @Published var issues: [GHIssue] = []
     /// Issues fetched per custom section in the Issues tab (keyed by section id).
     /// Populated when a user-created section's filters translate to a GitHub search.
@@ -18,6 +19,8 @@ final class Store: ObservableObject {
     @Published private(set) var viewer: GHViewer?
     /// Latest aggregated review state per PR (`GHIssue.id`) for the user's own PRs, e.g. `CHANGES_REQUESTED`.
     @Published var myPRReviewState: [Int: String] = [:]
+    /// Viewer's own most-recent review state per PR id for PRs the viewer has reviewed (others' PRs).
+    @Published var viewerReviewState: [Int: String] = [:]
     /// CI status, diff stats, merge conflict — from `GET /repos/.../pulls/{n}` + check-runs.
     @Published var prRowMetadata: [Int: PRRowMetadata] = [:]
     @Published var isLoading = false
@@ -67,6 +70,15 @@ final class Store: ObservableObject {
         myPRs.count + reviewRequests.count + issues.count
     }
 
+    /// Union of review-requested and reviewed-by-me PRs (deduped by id, request wins).
+    var reviewTabSourceRows: [GHIssue] {
+        var seen = Set<Int>()
+        var out: [GHIssue] = []
+        for pr in reviewRequests where seen.insert(pr.id).inserted { out.append(pr) }
+        for pr in reviewedByMePRs where seen.insert(pr.id).inserted { out.append(pr) }
+        return out
+    }
+
     func refresh() {
         refreshTask?.cancel()
         refreshTask = Task { await self.runRefresh() }
@@ -108,18 +120,29 @@ final class Store: ObservableObject {
             async let a = client.myPRs()
             async let b = client.reviewRequests()
             async let c = client.assignedIssues()
+            async let d = client.reviewedByMe()
             async let v = client.viewer()
-            let (prs, reviews, iss) = try await (a, b, c)
+            let (prs, reviews, iss, reviewedMe) = try await (a, b, c, d)
+            let viewerResult = try? await v
+            if let viewerResult {
+                self.viewer = viewerResult
+            }
             self.myPRs = prs
             self.reviewRequests = reviews
             self.issues = iss
+            // Exclude PRs still in the review-request queue; those are "needs your review", not "waiting on author".
+            let pendingIDs = Set(reviews.map(\.id))
+            let reviewedOnly = reviewedMe.filter { !pendingIDs.contains($0.id) }
+            self.reviewedByMePRs = reviewedOnly
             self.myPRReviewState = await Self.fetchMyPRReviewStates(client: client, prs: prs)
-            self.prRowMetadata = await Self.fetchPRRowMetadata(client: client, mine: prs, reviewQueue: reviews)
-            if let viewer = try? await v {
-                self.viewer = viewer
+            if let viewerLogin = viewerResult?.login ?? self.viewer?.login {
+                self.viewerReviewState = await Self.fetchViewerReviewStates(client: client, prs: reviewedOnly, viewer: viewerLogin)
+            } else {
+                self.viewerReviewState = [:]
             }
             let issueSections = self.sectionsByTab[.issues] ?? []
             self.issuesBySectionId = await Self.fetchIssueSections(client: client, sections: issueSections)
+            self.prRowMetadata = await Self.fetchPRRowMetadata(client: client, mine: prs, reviewQueue: reviews + reviewedOnly)
             self.errorMessage = nil
             self.lastRefreshed = Date()
             NotificationCenter.default.post(name: .gitbarStoreDidUpdate, object: self)
@@ -139,9 +162,11 @@ final class Store: ObservableObject {
             viewer = nil
             myPRs = []
             reviewRequests = []
+            reviewedByMePRs = []
             issues = []
             issuesBySectionId = [:]
             myPRReviewState = [:]
+            viewerReviewState = [:]
             prRowMetadata = [:]
             statsSnapshot = nil
             statsError = nil
@@ -289,6 +314,29 @@ final class Store: ObservableObject {
             var out: [UUID: [GHIssue]] = [:]
             for await (id, rows) in group {
                 out[id] = rows
+            }
+            return out
+        }
+    }
+
+    private static func fetchViewerReviewStates(client: GitHubClient, prs: [GHIssue], viewer: String) async -> [Int: String] {
+        guard !prs.isEmpty else { return [:] }
+        return await withTaskGroup(of: (Int, String?).self) { group in
+            for pr in prs {
+                group.addTask {
+                    let repo = pr.repoFull
+                    guard !repo.isEmpty else { return (pr.id, nil) }
+                    do {
+                        let state = try await client.viewerLatestReviewState(repo: repo, pr: pr.number, viewer: viewer)
+                        return (pr.id, state)
+                    } catch {
+                        return (pr.id, nil)
+                    }
+                }
+            }
+            var out: [Int: String] = [:]
+            for await (id, state) in group {
+                if let state { out[id] = state }
             }
             return out
         }

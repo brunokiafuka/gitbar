@@ -46,6 +46,20 @@ enum SectionPRStatusValue: String, Codable, CaseIterable, Equatable, Sendable {
     case merging = "Merging"
 }
 
+enum ReviewedByMeStateValue: String, Codable, CaseIterable, Equatable, Sendable {
+    case approved = "APPROVED"
+    case changesRequested = "CHANGES_REQUESTED"
+    case commented = "COMMENTED"
+
+    var label: String {
+        switch self {
+        case .approved: return "Approved"
+        case .changesRequested: return "Changes requested"
+        case .commented: return "Commented"
+        }
+    }
+}
+
 enum SectionCondition: Codable, Equatable, Sendable {
     case prStatus(op: SectionSetOp, values: [SectionPRStatusValue])
     case author(op: SectionEqOp, login: String)
@@ -56,6 +70,7 @@ enum SectionCondition: Codable, Equatable, Sendable {
     case label(op: SectionSetOp, name: String)
     case assignee(op: SectionSetOp, login: String)
     case hasMergeConflict(is: Bool)
+    case reviewedByMeState(op: SectionSetOp, values: [ReviewedByMeStateValue])
 
     private enum CodingKeys: String, CodingKey {
         case kind, op, values, login, repos, isDraft, name, isOn
@@ -63,7 +78,7 @@ enum SectionCondition: Codable, Equatable, Sendable {
 
     private enum Kind: String, Codable {
         case prStatus, author, reviewer, repository, ciStatus, draft
-        case label, assignee, hasMergeConflict
+        case label, assignee, hasMergeConflict, reviewedByMeState
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +124,11 @@ enum SectionCondition: Codable, Equatable, Sendable {
             )
         case .hasMergeConflict:
             self = .hasMergeConflict(is: try c.decode(Bool.self, forKey: .isOn))
+        case .reviewedByMeState:
+            self = .reviewedByMeState(
+                op: try c.decode(SectionSetOp.self, forKey: .op),
+                values: try c.decode([ReviewedByMeStateValue].self, forKey: .values)
+            )
         }
     }
 
@@ -149,6 +169,10 @@ enum SectionCondition: Codable, Equatable, Sendable {
         case .hasMergeConflict(let isOn):
             try c.encode(Kind.hasMergeConflict, forKey: .kind)
             try c.encode(isOn, forKey: .isOn)
+        case .reviewedByMeState(let op, let values):
+            try c.encode(Kind.reviewedByMeState, forKey: .kind)
+            try c.encode(op, forKey: .op)
+            try c.encode(values, forKey: .values)
         }
     }
 }
@@ -166,9 +190,23 @@ struct GitbarSection: Codable, Identifiable, Equatable, Sendable {
     var collapsed: Bool
     var order: Int
     var isDefault: Bool = false
+
+    /// True when any filter uses a `.reviewedByMeState` condition — such sections draw from
+    /// the "reviewed-by-me" source rather than the review-request queue.
+    var targetsReviewedByMe: Bool {
+        filters.contains { f in
+            f.conditions.contains { c in
+                if case .reviewedByMeState = c { return true }
+                return false
+            }
+        }
+    }
 }
 
 extension GitbarSection {
+    /// Stable id for the seeded "Waiting on author" section so settings can locate it after edits.
+    static let waitingOnAuthorDefaultID = UUID(uuidString: "D1D49A31-7B2E-4A07-8F2C-7E2A5E6E6E01")!
+
     static func seededDefaults() -> [PanelTab: [GitbarSection]] {
         [
             .mine: seededMine(),
@@ -262,6 +300,21 @@ extension GitbarSection {
                 order: 2,
                 isDefault: true
             ),
+            GitbarSection(
+                id: waitingOnAuthorDefaultID,
+                name: "Waiting on author",
+                tab: .review,
+                repos: .defaults,
+                filters: [SectionFilter(conditions: [
+                    .reviewedByMeState(op: .includes, values: ReviewedByMeStateValue.allCases)
+                ])],
+                visibility: .visible,
+                contributesToBadge: false,
+                sort: .updatedDesc,
+                collapsed: false,
+                order: 3,
+                isDefault: true
+            ),
         ]
     }
 
@@ -344,6 +397,13 @@ struct SectionMatcher {
             case .hasMergeConflict(let expected):
                 let actual = metadata?.hasMergeConflict ?? false
                 return actual == expected
+            case .reviewedByMeState(let op, let values):
+                guard let raw = reviewState,
+                      let state = ReviewedByMeStateValue(rawValue: raw) else {
+                    return op == .excludes
+                }
+                let has = values.contains(state)
+                return includesEval(op: op, inSet: has)
             }
         }
     }
@@ -429,7 +489,7 @@ extension GitbarSection {
                     let qualifier = trimmed.contains(" ") ? "\"\(trimmed)\"" : trimmed
                     parts.append(op == .includes ? "label:\(qualifier)" : "-label:\(qualifier)")
                     hasScoping = true
-                case .reviewer, .ciStatus, .draft, .hasMergeConflict:
+                case .reviewer, .ciStatus, .draft, .hasMergeConflict, .reviewedByMeState:
                     // Not expressible in the issue search API; local matcher will evaluate if applicable.
                     break
                 }

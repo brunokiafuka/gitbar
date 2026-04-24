@@ -24,11 +24,50 @@ enum Config {
 
     static func readSectionsWithMigration() -> [PanelTab: [GitbarSection]] {
         var root = readRoot()
+        var dirty = false
         if root.sections == nil && root.sectionsSeeded != true {
             root.sections = GitbarSection.seededDefaults()
             root.sectionsSeeded = true
-            try? writeRoot(root)
+            dirty = true
         }
+        if var sections = root.sections {
+            var review = sections[.review] ?? []
+            var changed = false
+            // Drop the previously-seeded "Approved" section now that Waiting on author covers approved reviews.
+            let approvedLegacyID = UUID(uuidString: "D1D49A31-7B2E-4A07-8F2C-7E2A5E6E6E02")!
+            if let idx = review.firstIndex(where: { $0.id == approvedLegacyID }) {
+                review.remove(at: idx)
+                changed = true
+            }
+            let seeded = GitbarSection.seededReview()
+            if !review.contains(where: { $0.id == GitbarSection.waitingOnAuthorDefaultID }) {
+                if let template = seeded.first(where: { $0.id == GitbarSection.waitingOnAuthorDefaultID }) {
+                    var toAdd = template
+                    toAdd.order = (review.map(\.order).max() ?? -1) + 1
+                    review.append(toAdd)
+                    changed = true
+                }
+            } else if let idx = review.firstIndex(where: { $0.id == GitbarSection.waitingOnAuthorDefaultID }) {
+                // Upgrade existing default section to include `.approved` if it still carries the prior default set.
+                let legacyDefault = Set<ReviewedByMeStateValue>([.changesRequested, .commented])
+                let conditions = review[idx].filters.flatMap(\.conditions)
+                for cond in conditions {
+                    if case let .reviewedByMeState(op, values) = cond, Set(values) == legacyDefault {
+                        review[idx].filters = [SectionFilter(conditions: [
+                            .reviewedByMeState(op: op, values: ReviewedByMeStateValue.allCases)
+                        ])]
+                        changed = true
+                        break
+                    }
+                }
+            }
+            if changed {
+                sections[.review] = review
+                root.sections = sections
+                dirty = true
+            }
+        }
+        if dirty { try? writeRoot(root) }
         return root.sections ?? [:]
     }
 
