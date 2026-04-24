@@ -75,6 +75,6 @@ Fine-grained token:
 
 Current release is an MVP. Planned improvements:
 
-- [ ] merge and mark-ready actions in-app
+- [x] merge and mark-ready actions in-app
 - [ ] failing CI section (check runs)
 - [ ] historical stats over time (instead of current snapshot only)
