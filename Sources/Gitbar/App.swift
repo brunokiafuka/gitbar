@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         setupMainMenu()
 
+        ThemeMode.apply(ThemeMode.stored)
         syncAppearance()
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.syncAppearance() }
