@@ -11,10 +11,8 @@ struct SettingsView: View {
     @AppStorage("gitbar.notify.ci") private var notifyCI = true
     @AppStorage("gitbar.notify.changesRequested") private var notifyChangesRequested = true
     @AppStorage("gitbar.refreshInterval") private var refreshInterval = "60s"
+    @AppStorage(ThemeMode.storageKey) private var appearanceMode = ThemeMode.dark.rawValue
     @State private var launchAtLogin = false
-
-    @State private var hideWaitingOnAuthor = false
-    @State private var waitingOnAuthorStates: Set<ReviewedByMeStateValue> = Set(ReviewedByMeStateValue.allCases)
 
     /// Classic PAT: pre-fills note + **repo** scope (pull requests, issues, metadata on repos you can access).
     private static let newClassicTokenURL: URL = {
@@ -135,41 +133,6 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
             }
 
-            Section("Filters") {
-                Toggle(isOn: $hideWaitingOnAuthor) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Hide \u{201C}Waiting on author\u{201D}")
-                        Text("Removes the default section that surfaces PRs where you've requested changes or commented.")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .onChange(of: hideWaitingOnAuthor) { _, new in
-                    setWaitingOnAuthorHidden(new)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Include reviews")
-                        Text("Which reviews of yours count as \u{201C}waiting on author\u{201D}.")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 16) {
-                        ForEach(ReviewedByMeStateValue.allCases, id: \.self) { state in
-                            Toggle(isOn: stateBinding(state)) {
-                                Text(state.label).font(.system(size: 12))
-                            }
-                            .toggleStyle(.checkbox)
-                            .disabled(hideWaitingOnAuthor)
-                        }
-                        Spacer()
-                    }
-                    .padding(.leading, 2)
-                }
-            }
-
             Section("Behavior") {
                 Toggle(isOn: $launchAtLogin) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -203,6 +166,26 @@ struct SettingsView: View {
                 .onChange(of: refreshInterval) { _, _ in
                     store.reconfigurePollingFromDefaults()
                 }
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Appearance")
+                        Text("Match macOS or force a specific theme")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Picker("", selection: $appearanceMode) {
+                        ForEach(ThemeMode.allCases) { mode in
+                            Text(mode.label).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 220)
+                }
+                .onChange(of: appearanceMode) { _, new in
+                    ThemeMode.apply(ThemeMode(rawValue: new) ?? .system)
+                }
             }
 
             Section("App") {
@@ -234,56 +217,7 @@ struct SettingsView: View {
         .onAppear {
             tokenField = store.token ?? ""
             launchAtLogin = LaunchAtLogin.isEnabled
-            syncWaitingOnAuthorState()
         }
-    }
-
-    private func syncWaitingOnAuthorState() {
-        guard let section = waitingOnAuthorSection() else { return }
-        hideWaitingOnAuthor = section.visibility == .hidden
-        waitingOnAuthorStates = currentStates(in: section) ?? Set(ReviewedByMeStateValue.allCases)
-    }
-
-    private func waitingOnAuthorSection() -> GitbarSection? {
-        store.sections(for: .review).first { $0.id == GitbarSection.waitingOnAuthorDefaultID }
-    }
-
-    private func currentStates(in section: GitbarSection) -> Set<ReviewedByMeStateValue>? {
-        for cond in section.filters.flatMap(\.conditions) {
-            if case let .reviewedByMeState(_, values) = cond { return Set(values) }
-        }
-        return nil
-    }
-
-    private func setWaitingOnAuthorHidden(_ hidden: Bool) {
-        guard var section = waitingOnAuthorSection() else { return }
-        let newVisibility: SectionVisibility = hidden ? .hidden : .visible
-        guard section.visibility != newVisibility else { return }
-        section.visibility = newVisibility
-        store.updateSection(section)
-    }
-
-    private func stateBinding(_ state: ReviewedByMeStateValue) -> Binding<Bool> {
-        Binding(
-            get: { waitingOnAuthorStates.contains(state) },
-            set: { isOn in
-                var next = waitingOnAuthorStates
-                if isOn { next.insert(state) } else { next.remove(state) }
-                // At least one state must remain selected to keep the section meaningful.
-                guard !next.isEmpty else { return }
-                waitingOnAuthorStates = next
-                persistWaitingOnAuthorStates(next)
-            }
-        )
-    }
-
-    private func persistWaitingOnAuthorStates(_ states: Set<ReviewedByMeStateValue>) {
-        guard var section = waitingOnAuthorSection() else { return }
-        let ordered = ReviewedByMeStateValue.allCases.filter { states.contains($0) }
-        section.filters = [SectionFilter(conditions: [
-            .reviewedByMeState(op: .includes, values: ordered)
-        ])]
-        store.updateSection(section)
     }
 
     @ViewBuilder
