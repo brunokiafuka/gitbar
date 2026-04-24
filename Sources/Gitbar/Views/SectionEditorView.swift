@@ -74,6 +74,9 @@ struct SectionEditorView: View {
             Divider().overlay(Theme.hairline(colorScheme))
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if showsDefaultIssuesNotice {
+                        defaultIssuesNotice
+                    }
                     nameSection
                     repositoriesSection
                     filtersSection
@@ -119,6 +122,34 @@ struct SectionEditorView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    private var showsDefaultIssuesNotice: Bool {
+        mode.tab == .issues && (mode.section?.isDefault ?? false)
+    }
+
+    private var defaultIssuesNotice: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Built-in filter — scoped to issues assigned to you.")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("For custom scopes (a specific repo, label, or another user), create a new filter. You can hide this one under Visibility.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Theme.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8).stroke(Theme.blue.opacity(0.25), lineWidth: 0.5)
+        )
     }
 
     private var nameSection: some View {
@@ -198,6 +229,12 @@ struct SectionEditorView: View {
             Text("Rows inside a filter are ANDed; filters are ORed.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Theme.meta)
+            if mode.tab == .issues, !(mode.section?.isDefault ?? false) {
+                Text("Runs as a GitHub search. Scope with a repo, label, author, or assignee — otherwise defaults to issues assigned to you.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             VStack(spacing: 8) {
                 ForEach(Array(filters.enumerated()), id: \.element.id) { filterIndex, filter in
@@ -417,7 +454,7 @@ struct SectionEditorView: View {
                 selection: binding.ciStatuses
             )
         case .author:
-            TextField("GitHub username", text: binding.authorLogin)
+            TextField("login or @me", text: binding.authorLogin)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
@@ -427,7 +464,7 @@ struct SectionEditorView: View {
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
         case .assignee:
-            TextField("GitHub username", text: binding.assigneeLogin)
+            TextField("login, @me, or @none", text: binding.assigneeLogin)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)

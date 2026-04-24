@@ -134,7 +134,11 @@ struct PanelView: View {
     }
 
     private var listSignature: String {
-        "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))"
+        let customIssueIds = store.issuesBySectionId
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { "\($0.key.uuidString):\($0.value.map(\.id))" }
+            .joined(separator: ",")
+        return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customIssueIds)"
     }
 
     private let allTabPreviewLimit = 5
@@ -176,18 +180,28 @@ struct PanelView: View {
         store.sections(for: tab)
             .filter { $0.visibility != .hidden }
             .map { section in
-                let rows = sourceRows.filter {
-                    SectionMatcher.matches(
-                        section: section,
-                        row: $0,
-                        viewerLogin: store.myLogin,
-                        metadata: store.prRowMetadata[$0.id],
-                        reviewState: store.myPRReviewState[$0.id]
-                    )
-                }
+                let rows = rowsForSection(section, sourceRows: sourceRows)
                 return TabSectionRows(section: section, rows: sort(rows, by: section.sort))
             }
             .filter { !$0.rows.isEmpty }
+    }
+
+    /// Rows for a single section. Issues-tab sections read remotely-fetched rows from the store
+    /// (each section runs its filters as a GitHub search). PR-tab sections filter `sourceRows`
+    /// locally via the matcher.
+    private func rowsForSection(_ section: GitbarSection, sourceRows: [GHIssue]) -> [GHIssue] {
+        if section.tab == .issues {
+            return store.issuesBySectionId[section.id] ?? []
+        }
+        return sourceRows.filter {
+            SectionMatcher.matches(
+                section: section,
+                row: $0,
+                viewerLogin: store.myLogin,
+                metadata: store.prRowMetadata[$0.id],
+                reviewState: store.myPRReviewState[$0.id]
+            )
+        }
     }
 
     private func unmatchedRows(for tab: PanelTab, sourceRows: [GHIssue]) -> [GHIssue] {
@@ -791,10 +805,12 @@ struct PanelView: View {
     private var showIssues: Bool { tab == .all || tab == .issues }
 
     private var isEmpty: Bool {
-        (tab == .all    && store.myPRs.isEmpty && store.reviewRequests.isEmpty && store.issues.isEmpty) ||
-        (tab == .mine   && store.myPRs.isEmpty) ||
-        (tab == .review && store.reviewRequests.isEmpty) ||
-        (tab == .issues && store.issues.isEmpty)
+        let customIssueRowCount = store.issuesBySectionId.values.reduce(0) { $0 + $1.count }
+        return
+            (tab == .all    && store.myPRs.isEmpty && store.reviewRequests.isEmpty && store.issues.isEmpty) ||
+            (tab == .mine   && store.myPRs.isEmpty) ||
+            (tab == .review && store.reviewRequests.isEmpty) ||
+            (tab == .issues && store.issues.isEmpty && customIssueRowCount == 0)
     }
 
     private var emptyState: some View {

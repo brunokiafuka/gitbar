@@ -10,6 +10,10 @@ final class Store: ObservableObject {
     @Published var myPRs: [GHIssue] = []
     @Published var reviewRequests: [GHIssue] = []
     @Published var issues: [GHIssue] = []
+    /// Issues fetched per custom section in the Issues tab (keyed by section id).
+    /// Populated when a user-created section's filters translate to a GitHub search.
+    /// The default "Assigned issues" section is not in this map — it reads from `issues`.
+    @Published var issuesBySectionId: [UUID: [GHIssue]] = [:]
     /// From `GET /user` when the token is valid; cleared on sign-out.
     @Published private(set) var viewer: GHViewer?
     /// Latest aggregated review state per PR (`GHIssue.id`) for the user's own PRs, e.g. `CHANGES_REQUESTED`.
@@ -114,6 +118,8 @@ final class Store: ObservableObject {
             if let viewer = try? await v {
                 self.viewer = viewer
             }
+            let issueSections = self.sectionsByTab[.issues] ?? []
+            self.issuesBySectionId = await Self.fetchIssueSections(client: client, sections: issueSections)
             self.errorMessage = nil
             self.lastRefreshed = Date()
             NotificationCenter.default.post(name: .gitbarStoreDidUpdate, object: self)
@@ -134,6 +140,7 @@ final class Store: ObservableObject {
             myPRs = []
             reviewRequests = []
             issues = []
+            issuesBySectionId = [:]
             myPRReviewState = [:]
             prRowMetadata = [:]
             statsSnapshot = nil
@@ -159,6 +166,7 @@ final class Store: ObservableObject {
             next[section.tab] = list
             sectionsByTab = next
             try? Config.saveSections(next)
+            if section.tab == .issues { refresh() }
         }
     }
 
@@ -171,6 +179,7 @@ final class Store: ObservableObject {
         next[section.tab] = list
         sectionsByTab = next
         try? Config.saveSections(next)
+        if toInsert.tab == .issues { refresh() }
     }
 
     func deleteSection(id: UUID, tab: PanelTab) {
@@ -182,6 +191,7 @@ final class Store: ObservableObject {
         next[tab] = list
         sectionsByTab = next
         try? Config.saveSections(next)
+        if tab == .issues { issuesBySectionId.removeValue(forKey: id) }
     }
 
     /// Moves `id` within `tab`. When `targetID` is nil, appends to the end.
@@ -248,6 +258,40 @@ final class Store: ObservableObject {
     func stopPolling() {
         pollTimer?.invalidate()
         pollTimer = nil
+    }
+
+    private static func fetchIssueSections(
+        client: GitHubClient,
+        sections: [GitbarSection]
+    ) async -> [UUID: [GHIssue]] {
+        guard !sections.isEmpty else { return [:] }
+        return await withTaskGroup(of: (UUID, [GHIssue]).self) { group in
+            for section in sections {
+                let queries = section.remoteIssueSearchQueries()
+                guard !queries.isEmpty else { continue }
+                group.addTask {
+                    var seen = Set<Int>()
+                    var merged: [GHIssue] = []
+                    for q in queries {
+                        let rows: [GHIssue]
+                        do {
+                            rows = try await client.searchIssues(q: q, perPage: 50)
+                        } catch {
+                            rows = []
+                        }
+                        for row in rows where seen.insert(row.id).inserted {
+                            merged.append(row)
+                        }
+                    }
+                    return (section.id, merged)
+                }
+            }
+            var out: [UUID: [GHIssue]] = [:]
+            for await (id, rows) in group {
+                out[id] = rows
+            }
+            return out
+        }
     }
 
     private static func fetchMyPRReviewStates(client: GitHubClient, prs: [GHIssue]) async -> [Int: String] {

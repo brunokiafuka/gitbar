@@ -312,7 +312,8 @@ struct SectionMatcher {
                 let normalizedValues = Set(values.map { $0 == .merging ? .merged : $0 })
                 return includesEval(op: op, inSet: normalizedValues.contains(status))
             case .author(let op, let login):
-                let equals = row.user.login.caseInsensitiveCompare(login) == .orderedSame
+                let resolved = resolveLogin(login, viewerLogin: viewerLogin)
+                let equals = row.user.login.caseInsensitiveCompare(resolved) == .orderedSame
                 return op == .is_ ? equals : !equals
             case .reviewer:
                 // Requested-reviewers aren't exposed by the search API; this filter
@@ -332,8 +333,13 @@ struct SectionMatcher {
                 let has = row.labels.contains { $0.name.lowercased() == needle }
                 return includesEval(op: op, inSet: has)
             case .assignee(let op, let login):
-                let needle = login.lowercased()
-                let has = (row.assignees ?? []).contains { $0.login.lowercased() == needle }
+                let has: Bool
+                if isUnassignedSentinel(login) {
+                    has = (row.assignees ?? []).isEmpty
+                } else {
+                    let needle = resolveLogin(login, viewerLogin: viewerLogin).lowercased()
+                    has = (row.assignees ?? []).contains { $0.login.lowercased() == needle }
+                }
                 return includesEval(op: op, inSet: has)
             case .hasMergeConflict(let expected):
                 let actual = metadata?.hasMergeConflict ?? false
@@ -349,5 +355,89 @@ struct SectionMatcher {
     private static func issueStatus(row: GHIssue) -> SectionPRStatusValue {
         if row.state.lowercased() == "open" { return .open }
         return row.pullRequest?.mergedAt != nil ? .merged : .closed
+    }
+
+    fileprivate static func resolveLogin(_ login: String, viewerLogin: String?) -> String {
+        let trimmed = login.trimmingCharacters(in: .whitespaces)
+        if trimmed.lowercased() == "@me", let me = viewerLogin { return me }
+        return trimmed
+    }
+
+    fileprivate static func isUnassignedSentinel(_ login: String) -> Bool {
+        let v = login.trimmingCharacters(in: .whitespaces).lowercased()
+        return v == "@none" || v == "unassigned"
+    }
+}
+
+// MARK: - Remote search translation (issues tab)
+
+extension GitbarSection {
+    /// Translates this section's filters into GitHub issue-search queries.
+    /// Each `SectionFilter` (OR'd at the section level) becomes one query whose
+    /// conditions (AND'd) are emitted as qualifiers. Sections without any
+    /// scoping condition (repo/label/author/assignee) implicitly scope to the
+    /// viewer (`assignee:@me`) so the remote result stays tractable.
+    func remoteIssueSearchQueries() -> [String] {
+        guard tab == .issues, !filters.isEmpty else { return [] }
+        return filters.map { filter in
+            var parts: [String] = ["type:issue"]
+            var hasScoping = false
+            var hasState = false
+            for cond in filter.conditions {
+                switch cond {
+                case .prStatus(let op, let values):
+                    // Issues only expose open/closed; legacy `.merging` + `.merged` collapse to `.closed`.
+                    let wanted: Set<SectionPRStatusValue> = Set(values.map { v -> SectionPRStatusValue in
+                        switch v {
+                        case .merging, .merged, .closed: return .closed
+                        case .open: return .open
+                        }
+                    })
+                    let target = op == .includes
+                        ? wanted
+                        : Set<SectionPRStatusValue>([.open, .closed]).subtracting(wanted)
+                    // Any state condition counts as a user-set state preference, even if
+                    // the target set is {open, closed} (== "any state", no qualifier needed).
+                    hasState = true
+                    if target == [.open] {
+                        parts.append("state:open")
+                    } else if target == [.closed] {
+                        parts.append("state:closed")
+                    }
+                case .author(let op, let login):
+                    let value = login.trimmingCharacters(in: .whitespaces)
+                    guard !value.isEmpty else { break }
+                    parts.append(op == .is_ ? "author:\(value)" : "-author:\(value)")
+                    hasScoping = true
+                case .assignee(let op, let login):
+                    if SectionMatcher.isUnassignedSentinel(login) {
+                        parts.append(op == .includes ? "no:assignee" : "assignee:*")
+                    } else {
+                        let value = login.trimmingCharacters(in: .whitespaces)
+                        guard !value.isEmpty else { break }
+                        parts.append(op == .includes ? "assignee:\(value)" : "-assignee:\(value)")
+                    }
+                    hasScoping = true
+                case .repository(let op, let repos):
+                    for repo in repos where !repo.trimmingCharacters(in: .whitespaces).isEmpty {
+                        parts.append(op == .includes ? "repo:\(repo)" : "-repo:\(repo)")
+                    }
+                    hasScoping = true
+                case .label(let op, let name):
+                    let trimmed = name.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { break }
+                    let qualifier = trimmed.contains(" ") ? "\"\(trimmed)\"" : trimmed
+                    parts.append(op == .includes ? "label:\(qualifier)" : "-label:\(qualifier)")
+                    hasScoping = true
+                case .reviewer, .ciStatus, .draft, .hasMergeConflict:
+                    // Not expressible in the issue search API; local matcher will evaluate if applicable.
+                    break
+                }
+            }
+            if !hasScoping { parts.append("assignee:@me") }
+            if !hasState { parts.append("state:open") }
+            parts.append("sort:updated-desc")
+            return parts.joined(separator: " ")
+        }
     }
 }

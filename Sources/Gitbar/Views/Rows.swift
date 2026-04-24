@@ -228,22 +228,42 @@ struct IssueRow: View {
                         .font(Theme.monoTiny)
                         .foregroundStyle(Theme.meta)
                 }
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6, rowSpacing: 4) {
                     Text(issue.repoShort)
                         .font(Theme.monoTiny)
                         .foregroundStyle(.secondary)
-                    Text("·").foregroundStyle(Theme.faint.opacity(0.9))
-                    ForEach(issue.labels.prefix(3)) { label in
-                        LabelPill(label: label)
+
+                    let assignees = issue.assignees ?? []
+                    dotSeparator
+                    if let first = assignees.first {
+                        AssigneeChip(login: first.login)
+                        if assignees.count > 1 {
+                            OverflowPill(count: assignees.count - 1)
+                        }
+                    } else {
+                        UnassignedChip()
                     }
-                    Spacer()
+
+                    if !issue.labels.isEmpty {
+                        dotSeparator
+                        ForEach(issue.labels.prefix(2)) { label in
+                            LabelPill(label: label)
+                        }
+                        if issue.labels.count > 2 {
+                            OverflowPill(count: issue.labels.count - 2)
+                        }
+                    }
+
                     if issue.comments > 0 {
+                        dotSeparator
                         HStack(spacing: 3) {
                             LucideRepoIconView(icon: .messageSquareDiff, size: 11, color: .secondary)
                             Text("\(issue.comments)").font(.system(size: 9.5))
                         }
                         .foregroundStyle(.secondary)
                     }
+
+                    dotSeparator
                     Text(RelativeTime.short(issue.updated))
                         .font(.system(size: 9.5))
                         .foregroundStyle(Theme.meta)
@@ -264,6 +284,10 @@ struct IssueRow: View {
 
     private var rowBackground: Color {
         (hovered || isSelected) ? Theme.surfaceHi(colorScheme) : .clear
+    }
+
+    private var dotSeparator: some View {
+        Text("·").foregroundStyle(Theme.faint.opacity(0.9))
     }
 
     private func openInBrowser() {
