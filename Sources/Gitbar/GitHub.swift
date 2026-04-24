@@ -117,10 +117,12 @@ struct GHUserEvent: Decodable {
 struct GHReview: Decodable {
     let state: String // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
     let submittedAt: String?
+    let user: GHUser?
 
     enum CodingKeys: String, CodingKey {
         case state
         case submittedAt = "submitted_at"
+        case user
     }
 }
 
@@ -212,6 +214,10 @@ actor GitHubClient {
         try await search(q: "type:pr state:open review-requested:@me sort:updated-desc")
     }
 
+    func reviewedByMe() async throws -> [GHIssue] {
+        try await search(q: "type:pr state:open reviewed-by:@me -author:@me sort:updated-desc")
+    }
+
     func assignedIssues() async throws -> [GHIssue] {
         try await search(q: "type:issue state:open assignee:@me sort:updated-desc")
     }
@@ -225,6 +231,18 @@ actor GitHubClient {
         ]
         return reviews
             .max(by: { (rank[$0.state] ?? 0) < (rank[$1.state] ?? 0) })?
+            .state
+    }
+
+    /// Most recent review submitted by `viewer` on this PR (APPROVED / CHANGES_REQUESTED / COMMENTED).
+    func viewerLatestReviewState(repo: String, pr: Int, viewer: String) async throws -> String? {
+        let url = reposURL(repo: repo, path: ["pulls", "\(pr)", "reviews"])
+        let data = try await get(url: url)
+        let reviews = try JSONDecoder().decode([GHReview].self, from: data)
+        return reviews
+            .filter { $0.user?.login.caseInsensitiveCompare(viewer) == .orderedSame }
+            .filter { $0.state == "APPROVED" || $0.state == "CHANGES_REQUESTED" || $0.state == "COMMENTED" }
+            .max(by: { ($0.submittedAt ?? "") < ($1.submittedAt ?? "") })?
             .state
     }
 

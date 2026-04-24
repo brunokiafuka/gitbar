@@ -55,6 +55,9 @@ struct PRRow: View {
     let showAuthor: Bool
     /// Latest review aggregate for your own PRs (`CHANGES_REQUESTED`, `APPROVED`, …).
     var reviewState: String? = nil
+    /// When true, `reviewState` represents the viewer's own review (label as "you X").
+    /// When false, it's an aggregate of reviews left on the PR by others.
+    var reviewIsViewer: Bool = false
     /// CI, diff, merge conflict from REST; nil if still loading or request failed.
     var metadata: PRRowMetadata? = nil
     var isSelected: Bool = false
@@ -87,14 +90,7 @@ struct PRRow: View {
 
                     if showAuthor {
                         Text("·").foregroundStyle(Theme.faint.opacity(0.9))
-                        Text("@\(pr.user.login)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !showAuthor {
-                        Text("·").foregroundStyle(Theme.faint.opacity(0.9))
-                        reviewStatusView
+                        AssigneeChip(login: pr.user.login)
                     }
 
                     if metadata?.hasMergeConflict == true {
@@ -134,6 +130,9 @@ struct PRRow: View {
                         .font(.system(size: 9.5))
                         .foregroundStyle(Theme.meta)
                 }
+                if let pill = reviewPillConfig {
+                    reviewPill(pill)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -161,40 +160,46 @@ struct PRRow: View {
         .background(Theme.slate.opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
     }
 
-    @ViewBuilder
-    private var reviewStatusView: some View {
-        HStack(spacing: 4) {
-            if reviewState == "APPROVED" || reviewState == "CHANGES_REQUESTED" {
-                Circle()
-                    .fill(reviewDotColor)
-                    .frame(width: 6, height: 6)
-            } else {
-                LucideRepoIconView(icon: .circleDotDashed, size: 11, color: reviewLineColor)
+    /// Shared per-state style for the review pill rendered on the third row.
+    private struct ReviewPillConfig {
+        let label: String
+        let color: Color
+        let icon: LucideRepoIcon
+    }
+
+    /// Pill config for the current review state. On viewer-review rows (Review tab)
+    /// we label what the viewer left, or render nothing if they haven't reviewed.
+    /// On aggregate rows (Mine tab) we render the PR's latest review outcome, including
+    /// a "pending" fallback when no review has been submitted yet.
+    private var reviewPillConfig: ReviewPillConfig? {
+        if reviewIsViewer {
+            switch reviewState {
+            case "APPROVED": return .init(label: "you approved", color: Theme.green, icon: .circleCheck)
+            case "CHANGES_REQUESTED": return .init(label: "you requested changes", color: Theme.red, icon: .alertOctagon)
+            case "COMMENTED": return .init(label: "you commented", color: Theme.amber, icon: .messageSquare)
+            default: return nil
             }
-            Text(reviewLineLabel)
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(reviewLineColor)
+        } else {
+            switch reviewState {
+            case "APPROVED": return .init(label: "approved", color: Theme.green, icon: .circleCheck)
+            case "CHANGES_REQUESTED": return .init(label: "changes requested", color: Theme.red, icon: .alertOctagon)
+            case "COMMENTED": return .init(label: "commented", color: Theme.amber, icon: .messageSquare)
+            default: return .init(label: "pending", color: Theme.slate, icon: .circleDotDashed)
+            }
         }
     }
 
-    private var reviewLineLabel: String {
-        switch reviewState {
-        case "APPROVED": return "approved"
-        case "CHANGES_REQUESTED": return "changes"
-        default: return "pending"
+    @ViewBuilder
+    private func reviewPill(_ config: ReviewPillConfig) -> some View {
+        HStack(spacing: 4) {
+            LucideRepoIconView(icon: config.icon, size: 10, color: config.color)
+            Text(config.label)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(config.color)
         }
-    }
-
-    private var reviewLineColor: Color {
-        switch reviewState {
-        case "APPROVED": return Theme.green
-        case "CHANGES_REQUESTED": return Theme.red
-        default: return Theme.slate
-        }
-    }
-
-    private var reviewDotColor: Color {
-        reviewLineColor
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(config.color.opacity(0.14), in: Capsule(style: .continuous))
     }
 
     private var rowBackground: Color {

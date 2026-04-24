@@ -17,6 +17,8 @@ enum LucideRepoIcon: Hashable, Sendable {
     case gitCommitHorizontal
     case timer
     case flame
+    case alertOctagon
+    case messageSquare
 }
 
 struct LucideRepoIconView: View {
@@ -67,6 +69,10 @@ struct LucideRepoIconView: View {
                 LucideTimerShape().stroke(style: strokeStyle).foregroundStyle(color)
             case .flame:
                 LucideFlameShape().stroke(style: strokeStyle).foregroundStyle(color)
+            case .alertOctagon:
+                LucideAlertOctagonShape().stroke(style: strokeStyle).foregroundStyle(color)
+            case .messageSquare:
+                LucideMessageSquareShape().stroke(style: strokeStyle).foregroundStyle(color)
             }
         }
         .frame(width: size, height: size)
@@ -250,5 +256,47 @@ private enum LucideGithubPath {
         let ox = rect.midX - 12 * sc
         let oy = rect.midY - 12 * sc
         return CGRect(x: ox + (cx - r) * sc, y: oy + (cy - r) * sc, width: 2 * r * sc, height: 2 * r * sc)
+    }
+}
+
+private struct LucideAlertOctagonShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let P = { LucideGithubPath.P($0, $1, rect) }
+        var p = Path()
+        // Octagon outline
+        p.move(to: P(7.86, 2))
+        p.addLine(to: P(16.14, 2))
+        p.addLine(to: P(22, 7.86))
+        p.addLine(to: P(22, 16.14))
+        p.addLine(to: P(16.14, 22))
+        p.addLine(to: P(7.86, 22))
+        p.addLine(to: P(2, 16.14))
+        p.addLine(to: P(2, 7.86))
+        p.closeSubpath()
+        // Exclamation stem
+        p.move(to: P(12, 8))
+        p.addLine(to: P(12, 12))
+        // Exclamation dot (small line segment so stroke renders)
+        p.move(to: P(12, 16))
+        p.addLine(to: P(12.01, 16))
+        return p
+    }
+}
+
+private struct LucideMessageSquareShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let P = { LucideGithubPath.P($0, $1, rect) }
+        var p = Path()
+        // Rounded-corner speech bubble: M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z
+        p.move(to: P(21, 15))
+        p.addQuadCurve(to: P(19, 17), control: P(21, 17))
+        p.addLine(to: P(7, 17))
+        p.addLine(to: P(3, 21))
+        p.addLine(to: P(3, 5))
+        p.addQuadCurve(to: P(5, 3), control: P(3, 3))
+        p.addLine(to: P(19, 3))
+        p.addQuadCurve(to: P(21, 5), control: P(21, 3))
+        p.closeSubpath()
+        return p
     }
 }
