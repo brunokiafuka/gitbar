@@ -206,7 +206,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("Gitbar 0.1.1 · Built for the menu bar")
+                Text("Gitbar 0.2.0 · Built for the menu bar")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.faint)
                     .frame(maxWidth: .infinity, alignment: .center)
