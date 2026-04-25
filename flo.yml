@@ -5,3 +5,8 @@ commands:
     description: Run the app
     command: ./install && open ~/Applications/Gitbar.app
     aliases: [ar]
+  release:
+    description: Bump version, tag, publish release, update Homebrew formula
+    command: sh scripts/release.sh
+    aliases: [r]
+    interactive: true
