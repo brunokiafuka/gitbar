@@ -19,6 +19,8 @@ enum PanelTab: String, CaseIterable, Identifiable, Codable, Sendable {
         default:      return nil
         }
     }
+
+    var hiddenStorageKey: String { "gitbar.tabs.hidden.\(rawValue)" }
 }
 
 private struct PanelListEntry: Identifiable, Hashable {
@@ -42,6 +44,36 @@ struct PanelView: View {
     @State private var managingSections: Bool = false
     @FocusState private var listKeyboardFocused: Bool
 
+    @AppStorage(PanelTab.all.hiddenStorageKey)    private var hideAll = false
+    @AppStorage(PanelTab.mine.hiddenStorageKey)   private var hideMine = false
+    @AppStorage(PanelTab.review.hiddenStorageKey) private var hideReview = false
+    @AppStorage(PanelTab.issues.hiddenStorageKey) private var hideIssues = false
+    @AppStorage(PanelTab.stats.hiddenStorageKey)  private var hideStats = false
+
+    /// Tabs the user hasn't hidden, in the canonical `PanelTab.allCases` order.
+    /// Always returns at least `[.all]` — the panel won't render with zero tabs even
+    /// if `UserDefaults` somehow ends up with every tab flagged hidden.
+    private var visibleTabs: [PanelTab] {
+        let visible = PanelTab.allCases.filter { !isHidden($0) }
+        return visible.isEmpty ? [.all] : visible
+    }
+
+    private func isHidden(_ t: PanelTab) -> Bool {
+        switch t {
+        case .all:    return hideAll
+        case .mine:   return hideMine
+        case .review: return hideReview
+        case .issues: return hideIssues
+        case .stats:  return hideStats
+        }
+    }
+
+    /// Stable string that changes whenever any tab visibility flag flips, so a single
+    /// `onChange` can re-clamp the active tab when the visible set shrinks.
+    private var visibilitySignature: String {
+        visibleTabs.map(\.rawValue).joined(separator: ",")
+    }
+
     private var isOverlayActive: Bool { managingSections || editorState != nil }
     private let panelWidth: CGFloat = 520
     private let panelHeight: CGFloat = 620
@@ -58,12 +90,16 @@ struct PanelView: View {
             .onAppear {
                 if store.hasToken { store.refresh() }
                 listKeyboardFocused = true
+                clampActiveTabToVisible()
                 store.isStatsTabActive = (tab == .stats)
             }
             .onChange(of: tab) { _, new in
                 store.isStatsTabActive = (new == .stats)
                 selectedIndex = 0
                 clampSelection()
+            }
+            .onChange(of: visibilitySignature) { _, _ in
+                clampActiveTabToVisible()
             }
             .onChange(of: listSignature) { _, _ in
                 clampSelection()
@@ -272,16 +308,29 @@ struct PanelView: View {
     }
 
     private func cycleTab(_ delta: Int) {
-        let all = PanelTab.allCases
-        guard let i = all.firstIndex(of: tab) else { return }
+        let all = visibleTabs
+        guard let i = all.firstIndex(of: tab) else {
+            if let first = all.first { switchToTab(first) }
+            return
+        }
         let n = all.count
+        guard n > 0 else { return }
         let next = ((i + delta) % n + n) % n
         switchToTab(all[next])
     }
 
     private func selectTabKeyboard(_ t: PanelTab) -> KeyPress.Result {
+        // Visibility is presentational; ⌘1…5 still jumps directly to any tab.
         switchToTab(t)
         return .handled
+    }
+
+    private func clampActiveTabToVisible() {
+        let visible = visibleTabs
+        if !visible.contains(tab), let first = visible.first {
+            tab = first
+            selectedIndex = 0
+        }
     }
 
     private func handleUpArrow() -> KeyPress.Result {
@@ -326,7 +375,7 @@ struct PanelView: View {
 
     private var tabBar: some View {
         HStack(spacing: 2) {
-            ForEach(PanelTab.allCases) { t in
+            ForEach(visibleTabs) { t in
                 tabButton(t)
             }
             Spacer(minLength: 4)
@@ -472,7 +521,7 @@ struct PanelView: View {
                                 )
                                 .id("all-m-\(pr.id)")
                             }
-                            if store.myPRs.count > allTabPreviewLimit {
+                            if store.myPRs.count > allTabPreviewLimit, !isHidden(.mine) {
                                 viewAllButton(destination: .mine, remaining: store.myPRs.count - allTabPreviewLimit)
                             }
                         }
@@ -492,7 +541,7 @@ struct PanelView: View {
                                 )
                                 .id("all-r-\(pr.id)")
                             }
-                            if store.reviewRequests.count > allTabPreviewLimit {
+                            if store.reviewRequests.count > allTabPreviewLimit, !isHidden(.review) {
                                 viewAllButton(destination: .review, remaining: store.reviewRequests.count - allTabPreviewLimit)
                             }
                         }
@@ -507,7 +556,7 @@ struct PanelView: View {
                                 IssueRow(issue: issue, isSelected: isEntrySelected("all-i-\(issue.id)"))
                                     .id("all-i-\(issue.id)")
                             }
-                            if store.issues.count > allTabPreviewLimit {
+                            if store.issues.count > allTabPreviewLimit, !isHidden(.issues) {
                                 viewAllButton(destination: .issues, remaining: store.issues.count - allTabPreviewLimit)
                             }
                         }
