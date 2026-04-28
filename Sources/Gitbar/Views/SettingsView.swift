@@ -12,7 +12,16 @@ struct SettingsView: View {
     @AppStorage("gitbar.notify.changesRequested") private var notifyChangesRequested = true
     @AppStorage("gitbar.refreshInterval") private var refreshInterval = "60s"
     @AppStorage(ThemeMode.storageKey) private var appearanceMode = ThemeMode.dark.rawValue
+    @AppStorage(PanelTab.all.hiddenStorageKey)    private var hideAll = false
+    @AppStorage(PanelTab.mine.hiddenStorageKey)   private var hideMine = false
+    @AppStorage(PanelTab.review.hiddenStorageKey) private var hideReview = false
+    @AppStorage(PanelTab.issues.hiddenStorageKey) private var hideIssues = false
+    @AppStorage(PanelTab.stats.hiddenStorageKey)  private var hideStats = false
     @State private var launchAtLogin = false
+
+    private var visibleTabCount: Int {
+        [hideAll, hideMine, hideReview, hideIssues, hideStats].filter { !$0 }.count
+    }
 
     /// Classic PAT: pre-fills note + **repo** scope (pull requests, issues, metadata on repos you can access).
     private static let newClassicTokenURL: URL = {
@@ -133,6 +142,14 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
             }
 
+            Section("Tabs") {
+                tabToggle(.all,    hidden: $hideAll)
+                tabToggle(.mine,   hidden: $hideMine)
+                tabToggle(.review, hidden: $hideReview)
+                tabToggle(.issues, hidden: $hideIssues)
+                tabToggle(.stats,  hidden: $hideStats)
+            }
+
             Section("Behavior") {
                 Toggle(isOn: $launchAtLogin) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -217,6 +234,34 @@ struct SettingsView: View {
         .onAppear {
             tokenField = store.token ?? ""
             launchAtLogin = LaunchAtLogin.isEnabled
+        }
+    }
+
+    private func tabToggle(_ tab: PanelTab, hidden: Binding<Bool>) -> some View {
+        let show = Binding<Bool>(
+            get: { !hidden.wrappedValue },
+            set: { hidden.wrappedValue = !$0 }
+        )
+        let isLastVisible = !hidden.wrappedValue && visibleTabCount == 1
+        return Toggle(isOn: show) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tab.label)
+                Text(tabSubtitle(for: tab))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .disabled(isLastVisible)
+        .help(isLastVisible ? "At least one tab must remain visible." : "")
+    }
+
+    private func tabSubtitle(for tab: PanelTab) -> String {
+        switch tab {
+        case .all:    return "Combined overview of every queue"
+        case .mine:   return "Pull requests you authored"
+        case .review: return "Pull requests awaiting your review"
+        case .issues: return "Issues assigned to you"
+        case .stats:  return "Activity overview"
         }
     }
 
