@@ -446,6 +446,7 @@ struct PanelView: View {
         } else if let err = store.errorMessage,
                   store.myPRs.isEmpty,
                   store.reviewRequests.isEmpty,
+                  store.reviewedByMePRs.isEmpty,
                   store.issues.isEmpty {
             errorState(err)
         } else if isEmpty {
@@ -826,7 +827,7 @@ struct PanelView: View {
         return
             (tab == .all    && store.myPRs.isEmpty && store.reviewRequests.isEmpty && store.issues.isEmpty) ||
             (tab == .mine   && store.myPRs.isEmpty) ||
-            (tab == .review && store.reviewRequests.isEmpty) ||
+            (tab == .review && store.reviewRequests.isEmpty && store.reviewedByMePRs.isEmpty) ||
             (tab == .issues && store.issues.isEmpty && customIssueRowCount == 0)
     }
 
