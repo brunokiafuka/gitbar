@@ -11,10 +11,12 @@ final class Store: ObservableObject {
     @Published var reviewRequests: [GHIssue] = []
     @Published var reviewedByMePRs: [GHIssue] = []
     @Published var issues: [GHIssue] = []
-    /// Issues fetched per custom section in the Issues tab (keyed by section id).
-    /// Populated when a user-created section's filters translate to a GitHub search.
-    /// The default "Assigned issues" section is not in this map — it reads from `issues`.
-    @Published var issuesBySectionId: [UUID: [GHIssue]] = [:]
+    /// Rows fetched per section that runs as a per-section GitHub search (keyed by section id).
+    /// Populated for: every Issues-tab section whose filters translate to a search query, and
+    /// every Review-tab section whose filters carry a scoping condition (`hasScopingCondition`).
+    /// Sections that filter the local queue (default "Assigned issues", default Review sections)
+    /// are not in this map.
+    @Published var customSectionRows: [UUID: [GHIssue]] = [:]
     /// From `GET /user` when the token is valid; cleared on sign-out.
     @Published private(set) var viewer: GHViewer?
     /// Latest aggregated review state per PR (`GHIssue.id`) for the user's own PRs, e.g. `CHANGES_REQUESTED`.
@@ -140,8 +142,9 @@ final class Store: ObservableObject {
             } else {
                 self.viewerReviewState = [:]
             }
-            let issueSections = self.sectionsByTab[.issues] ?? []
-            self.issuesBySectionId = await Self.fetchIssueSections(client: client, sections: issueSections)
+            let customRowSections = (self.sectionsByTab[.issues] ?? [])
+                + (self.sectionsByTab[.review] ?? []).filter { $0.hasScopingCondition }
+            self.customSectionRows = await Self.fetchCustomSectionRows(client: client, sections: customRowSections)
             self.prRowMetadata = await Self.fetchPRRowMetadata(client: client, mine: prs, reviewQueue: reviews + reviewedOnly)
             self.errorMessage = nil
             self.lastRefreshed = Date()
@@ -164,7 +167,7 @@ final class Store: ObservableObject {
             reviewRequests = []
             reviewedByMePRs = []
             issues = []
-            issuesBySectionId = [:]
+            customSectionRows = [:]
             myPRReviewState = [:]
             viewerReviewState = [:]
             prRowMetadata = [:]
@@ -191,7 +194,7 @@ final class Store: ObservableObject {
             next[section.tab] = list
             sectionsByTab = next
             try? Config.saveSections(next)
-            if section.tab == .issues { refresh() }
+            if section.tab == .issues || section.tab == .review { refresh() }
         }
     }
 
@@ -204,7 +207,7 @@ final class Store: ObservableObject {
         next[section.tab] = list
         sectionsByTab = next
         try? Config.saveSections(next)
-        if toInsert.tab == .issues { refresh() }
+        if toInsert.tab == .issues || toInsert.tab == .review { refresh() }
     }
 
     func deleteSection(id: UUID, tab: PanelTab) {
@@ -216,7 +219,7 @@ final class Store: ObservableObject {
         next[tab] = list
         sectionsByTab = next
         try? Config.saveSections(next)
-        if tab == .issues { issuesBySectionId.removeValue(forKey: id) }
+        if tab == .issues || tab == .review { customSectionRows.removeValue(forKey: id) }
     }
 
     /// Moves `id` within `tab`. When `targetID` is nil, appends to the end.
@@ -285,14 +288,19 @@ final class Store: ObservableObject {
         pollTimer = nil
     }
 
-    private static func fetchIssueSections(
+    private static func fetchCustomSectionRows(
         client: GitHubClient,
         sections: [GitbarSection]
     ) async -> [UUID: [GHIssue]] {
         guard !sections.isEmpty else { return [:] }
         return await withTaskGroup(of: (UUID, [GHIssue]).self) { group in
             for section in sections {
-                let queries = section.remoteIssueSearchQueries()
+                let queries: [String]
+                switch section.tab {
+                case .issues: queries = section.remoteIssueSearchQueries()
+                case .review: queries = section.remoteReviewSearchQueries()
+                default: queries = []
+                }
                 guard !queries.isEmpty else { continue }
                 group.addTask {
                     var seen = Set<Int>()

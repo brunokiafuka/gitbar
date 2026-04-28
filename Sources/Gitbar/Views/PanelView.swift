@@ -7,7 +7,7 @@ enum PanelTab: String, CaseIterable, Identifiable, Codable, Sendable {
     var label: String {
         switch self {
         case .all: return "All"
-        case .mine: return "Mine"
+        case .mine: return "My PRs"
         case .review: return "Review"
         case .issues: return "Issues"
         case .stats: return "Stats"
@@ -170,11 +170,11 @@ struct PanelView: View {
     }
 
     private var listSignature: String {
-        let customIssueIds = store.issuesBySectionId
+        let customRowIds = store.customSectionRows
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .map { "\($0.key.uuidString):\($0.value.map(\.id))" }
             .joined(separator: ",")
-        return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.reviewedByMePRs.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customIssueIds)"
+        return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.reviewedByMePRs.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customRowIds)"
     }
 
     private let allTabPreviewLimit = 5
@@ -223,12 +223,17 @@ struct PanelView: View {
     }
 
     /// Rows for a single section. Issues-tab sections read remotely-fetched rows from the store
-    /// (each section runs its filters as a GitHub search). PR-tab sections filter `sourceRows`
-    /// locally via the matcher, with the Review tab splitting between the review-request queue
-    /// and reviewed-by-me PRs depending on the section's conditions.
+    /// (each section runs its filters as a GitHub search). Review-tab sections with a scoping
+    /// condition (`hasScopingCondition`) widen to the same per-section search and likewise read
+    /// from `customSectionRows`. Otherwise PR-tab sections filter `sourceRows` locally via the
+    /// matcher, with the Review tab splitting between the review-request queue and reviewed-by-me
+    /// PRs depending on the section's conditions.
     private func rowsForSection(_ section: GitbarSection, sourceRows: [GHIssue]) -> [GHIssue] {
         if section.tab == .issues {
-            return store.issuesBySectionId[section.id] ?? []
+            return store.customSectionRows[section.id] ?? []
+        }
+        if section.tab == .review, section.hasScopingCondition {
+            return store.customSectionRows[section.id] ?? []
         }
         let effectiveSource = sectionSource(for: section, tabSource: sourceRows)
         return effectiveSource.filter {
@@ -872,12 +877,18 @@ struct PanelView: View {
     private var showIssues: Bool { tab == .all || tab == .issues }
 
     private var isEmpty: Bool {
-        let customIssueRowCount = store.issuesBySectionId.values.reduce(0) { $0 + $1.count }
+        let customRowsForTab: (PanelTab) -> Int = { t in
+            self.store.sections(for: t)
+                .map { self.store.customSectionRows[$0.id]?.count ?? 0 }
+                .reduce(0, +)
+        }
+        let issuesCustomRows = customRowsForTab(.issues)
+        let reviewCustomRows = customRowsForTab(.review)
         return
             (tab == .all    && store.myPRs.isEmpty && store.reviewRequests.isEmpty && store.issues.isEmpty) ||
             (tab == .mine   && store.myPRs.isEmpty) ||
-            (tab == .review && store.reviewRequests.isEmpty && store.reviewedByMePRs.isEmpty) ||
-            (tab == .issues && store.issues.isEmpty && customIssueRowCount == 0)
+            (tab == .review && store.reviewRequests.isEmpty && store.reviewedByMePRs.isEmpty && reviewCustomRows == 0) ||
+            (tab == .issues && store.issues.isEmpty && issuesCustomRows == 0)
     }
 
     private var emptyState: some View {

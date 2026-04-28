@@ -77,6 +77,9 @@ struct SectionEditorView: View {
                     if showsDefaultIssuesNotice {
                         defaultIssuesNotice
                     }
+                    if showsReviewWideningNotice {
+                        reviewWideningNotice
+                    }
                     nameSection
                     repositoriesSection
                     filtersSection
@@ -128,6 +131,16 @@ struct SectionEditorView: View {
         mode.tab == .issues && (mode.section?.isDefault ?? false)
     }
 
+    /// True when the live filter draft has any scoping condition (repo/author/assignee/label/reviewer)
+    /// with a non-empty value. Drives the widening notice and the editor's metadata-field hiding.
+    private var isReviewWidened: Bool {
+        mode.tab == .review && filters.contains { f in
+            f.conditions.contains(where: { $0.isScopingDraft })
+        }
+    }
+
+    private var showsReviewWideningNotice: Bool { isReviewWidened }
+
     private var defaultIssuesNotice: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "info.circle")
@@ -139,6 +152,30 @@ struct SectionEditorView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text("For custom scopes (a specific repo, label, or another user), create a new filter. You can hide this one under Visibility.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Theme.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8).stroke(Theme.blue.opacity(0.25), lineWidth: 0.5)
+        )
+    }
+
+    private var reviewWideningNotice: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Filtering sections")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("Adding a scoping filter (Repository, Author, Assignee, Label, Reviewer, Reviewed by) extends this section to show all matching PRs across that scope, not just PRs awaiting your review.")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.meta)
                     .fixedSize(horizontal: false, vertical: true)
@@ -231,6 +268,12 @@ struct SectionEditorView: View {
                 .foregroundStyle(Theme.meta)
             if mode.tab == .issues, !(mode.section?.isDefault ?? false) {
                 Text("Runs as a GitHub search. Scope with a repo, label, author, or assignee — otherwise defaults to issues assigned to you.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if mode.tab == .review {
+                Text("Review sections show open PRs unless you add a Status filter.")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.meta)
                     .fixedSize(horizontal: false, vertical: true)
@@ -354,40 +397,57 @@ struct SectionEditorView: View {
     @ViewBuilder
     private func conditionRow(filterIndex: Int, conditionIndex: Int, isFirstInFilter: Bool) -> some View {
         let binding = conditionBinding(filterIndex: filterIndex, conditionIndex: conditionIndex)
-        HStack(spacing: 8) {
-            Text(isFirstInFilter ? "Where" : "And")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 42, alignment: .trailing)
+        let currentField = binding.wrappedValue.field
+        let stale = isReviewWidened && Self.metadataDependentFields.contains(currentField)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(isFirstInFilter ? "Where" : "And")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 42, alignment: .trailing)
 
-            Picker("", selection: binding.field) {
-                ForEach(Self.availableFields(for: mode.tab)) { field in
-                    Text(field.label(for: mode.tab)).tag(field)
-                }
-            }
-            .labelsHidden()
-            .controlSize(.small)
-            .frame(width: conditionFieldWidth)
-
-            operatorPicker(for: binding)
-            valueEditor(for: binding)
-                .frame(width: conditionValueWidth, alignment: .leading)
-
-            Button {
-                if filters[filterIndex].conditions.count > 1 {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        _ = filters[filterIndex].conditions.remove(at: conditionIndex)
+                Picker("", selection: binding.field) {
+                    ForEach(visibleFields(currentField: currentField)) { field in
+                        Text(field.label(for: mode.tab)).tag(field)
                     }
                 }
-            } label: {
-                Image(systemName: "minus.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(filters[filterIndex].conditions.count > 1 ? Color.secondary : Color.secondary.opacity(0.3))
-                    .frame(width: 20, height: 20)
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(width: conditionFieldWidth)
+
+                operatorPicker(for: binding)
+                valueEditor(for: binding)
+                    .frame(width: conditionValueWidth, alignment: .leading)
+
+                Button {
+                    if filters[filterIndex].conditions.count > 1 {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            _ = filters[filterIndex].conditions.remove(at: conditionIndex)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(filters[filterIndex].conditions.count > 1 ? Color.secondary : Color.secondary.opacity(0.3))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .disabled(filters[filterIndex].conditions.count <= 1)
+                .help(filters[filterIndex].conditions.count > 1 ? "Remove condition" : "At least one condition is required")
             }
-            .buttonStyle(.plain)
-            .disabled(filters[filterIndex].conditions.count <= 1)
-            .help(filters[filterIndex].conditions.count > 1 ? "Remove condition" : "At least one condition is required")
+            if stale {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Theme.amber)
+                    Text("Won't apply on widened sections — remove or drop the scoping filter to re-enable.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.meta)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Align the warning under the field picker: 42 ("Where" label width) + 8 (HStack spacing).
+                .padding(.leading, 50)
+            }
         }
         .padding(.leading, 8)
         .padding(.trailing, 12)
@@ -396,6 +456,17 @@ struct SectionEditorView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 6).stroke(Theme.hairline(colorScheme), lineWidth: 0.5)
         )
+    }
+
+    /// Fields the picker should show. Hides metadata-dependent fields on widened Review
+    /// sections, but keeps the row's *current* field in the menu so existing instances
+    /// remain editable (and the warning row above it stays meaningful).
+    private func visibleFields(currentField: ConditionDraft.Field) -> [ConditionDraft.Field] {
+        let all = Self.availableFields(for: mode.tab)
+        guard isReviewWidened else { return all }
+        return all.filter { field in
+            !Self.metadataDependentFields.contains(field) || field == currentField
+        }
     }
 
     private func conditionBinding(filterIndex: Int, conditionIndex: Int) -> Binding<ConditionDraft> {
@@ -416,7 +487,7 @@ struct SectionEditorView: View {
             .labelsHidden()
             .controlSize(.small)
             .frame(width: operatorWidth)
-        case .author:
+        case .author, .reviewedBy:
             Picker("", selection: binding.eqOp) {
                 Text("is").tag(SectionEqOp.is_)
                 Text("is not").tag(SectionEqOp.isNot)
@@ -503,6 +574,11 @@ struct SectionEditorView: View {
                 all: ReviewedByMeStateValue.allCases.map { ($0, $0.label) },
                 selection: binding.reviewedByMeStates
             )
+        case .reviewedBy:
+            TextField("login or @me", text: binding.reviewedByLogin)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -653,11 +729,18 @@ struct SectionEditorView: View {
         case .mine:
             return [.prStatus, .author, .assignee, .repository, .label, .ciStatus, .draft]
         case .review:
-            return [.prStatus, .author, .assignee, .repository, .label, .ciStatus, .draft, .reviewedByMeState]
+            return [.prStatus, .author, .assignee, .repository, .label, .reviewer, .reviewedBy, .ciStatus, .draft, .reviewedByMeState]
         case .all, .stats:
             return [.prStatus, .author, .repository, .label]
         }
     }
+
+    /// Fields hidden from the picker on a widened Review-tab section because they require
+    /// per-PR metadata that isn't fetched for outside-queue PRs. Existing instances of these
+    /// on a now-widened section render an inline warning row instead.
+    fileprivate static let metadataDependentFields: Set<ConditionDraft.Field> = [
+        .ciStatus, .mergeConflict, .reviewedByMeState
+    ]
 
     private var visibilityHint: String {
         switch visibility {
@@ -706,9 +789,11 @@ struct ConditionDraft: Identifiable, Equatable {
     var isDraftValue: Bool = true
     var hasMergeConflictValue: Bool = true
     var reviewedByMeStates: Set<ReviewedByMeStateValue> = [.changesRequested, .commented]
+    var reviewedByLogin: String = "@me"
 
     enum Field: String, CaseIterable, Identifiable, Hashable {
         case prStatus, author, reviewer, assignee, repository, label, ciStatus, draft, mergeConflict, reviewedByMeState
+        case reviewedBy
 
         var id: String { rawValue }
         func label(for tab: PanelTab) -> String {
@@ -723,6 +808,7 @@ struct ConditionDraft: Identifiable, Equatable {
             case .draft: return "Draft"
             case .mergeConflict: return "Merge conflict"
             case .reviewedByMeState: return "Your review"
+            case .reviewedBy: return "Reviewed by"
             }
         }
     }
@@ -739,9 +825,10 @@ struct ConditionDraft: Identifiable, Equatable {
             field = .author
             eqOp = op
             authorLogin = login
-        case .reviewer:
-            // Legacy: this condition can't be evaluated reliably; fall back to PR status.
-            field = .prStatus
+        case .reviewer(let op, let login):
+            field = .reviewer
+            setOp = op
+            reviewerLogin = login
         case .ciStatus(let op, let values):
             field = .ciStatus
             setOp = op
@@ -768,6 +855,35 @@ struct ConditionDraft: Identifiable, Equatable {
             field = .reviewedByMeState
             setOp = op
             reviewedByMeStates = Set(values)
+        case .reviewedBy(let op, let login):
+            field = .reviewedBy
+            eqOp = op
+            reviewedByLogin = login
+        }
+    }
+
+    /// True when this draft would produce a scoping condition (repo / author / assignee /
+    /// label / reviewer / reviewedBy) with a non-empty value. Mirrors `SectionCondition.isScoping`
+    /// for the editor's live state — used to flip the widening notice and metadata-field hiding
+    /// as the user types.
+    var isScopingDraft: Bool {
+        switch field {
+        case .repository:
+            return repositoryText
+                .split(separator: ",")
+                .contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        case .author:
+            return !authorLogin.trimmingCharacters(in: .whitespaces).isEmpty
+        case .assignee:
+            return !assigneeLogin.trimmingCharacters(in: .whitespaces).isEmpty
+        case .label:
+            return !labelName.trimmingCharacters(in: .whitespaces).isEmpty
+        case .reviewer:
+            return !reviewerLogin.trimmingCharacters(in: .whitespaces).isEmpty
+        case .reviewedBy:
+            return !reviewedByLogin.trimmingCharacters(in: .whitespaces).isEmpty
+        case .prStatus, .ciStatus, .draft, .mergeConflict, .reviewedByMeState:
+            return false
         }
     }
 
@@ -809,6 +925,10 @@ struct ConditionDraft: Identifiable, Equatable {
         case .reviewedByMeState:
             guard !reviewedByMeStates.isEmpty else { return nil }
             return .reviewedByMeState(op: setOp, values: Array(reviewedByMeStates))
+        case .reviewedBy:
+            let trimmed = reviewedByLogin.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return nil }
+            return .reviewedBy(op: eqOp, login: trimmed)
         }
     }
 }
