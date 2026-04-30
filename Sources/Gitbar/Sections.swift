@@ -71,6 +71,7 @@ enum SectionCondition: Codable, Equatable, Sendable {
     case assignee(op: SectionSetOp, login: String)
     case hasMergeConflict(is: Bool)
     case reviewedByMeState(op: SectionSetOp, values: [ReviewedByMeStateValue])
+    case reviewedBy(op: SectionEqOp, login: String)
 
     private enum CodingKeys: String, CodingKey {
         case kind, op, values, login, repos, isDraft, name, isOn
@@ -79,6 +80,7 @@ enum SectionCondition: Codable, Equatable, Sendable {
     private enum Kind: String, Codable {
         case prStatus, author, reviewer, repository, ciStatus, draft
         case label, assignee, hasMergeConflict, reviewedByMeState
+        case reviewedBy
     }
 
     init(from decoder: Decoder) throws {
@@ -129,6 +131,11 @@ enum SectionCondition: Codable, Equatable, Sendable {
                 op: try c.decode(SectionSetOp.self, forKey: .op),
                 values: try c.decode([ReviewedByMeStateValue].self, forKey: .values)
             )
+        case .reviewedBy:
+            self = .reviewedBy(
+                op: try c.decode(SectionEqOp.self, forKey: .op),
+                login: try c.decode(String.self, forKey: .login)
+            )
         }
     }
 
@@ -173,6 +180,10 @@ enum SectionCondition: Codable, Equatable, Sendable {
             try c.encode(Kind.reviewedByMeState, forKey: .kind)
             try c.encode(op, forKey: .op)
             try c.encode(values, forKey: .values)
+        case .reviewedBy(let op, let login):
+            try c.encode(Kind.reviewedBy, forKey: .kind)
+            try c.encode(op, forKey: .op)
+            try c.encode(login, forKey: .login)
         }
     }
 }
@@ -199,6 +210,49 @@ struct GitbarSection: Codable, Identifiable, Equatable, Sendable {
                 if case .reviewedByMeState = c { return true }
                 return false
             }
+        }
+    }
+
+    /// True when any filter has a scoping condition (repo / author / assignee / label / reviewer)
+    /// with a non-empty value. On the Review tab this widens the section to a per-section
+    /// GitHub search instead of filtering the local review queue.
+    var hasScopingCondition: Bool {
+        filters.contains { f in f.conditions.contains(where: { $0.isScoping }) }
+    }
+}
+
+extension SectionCondition {
+    /// Conditions that scope what GitHub returns (repo / author / assignee / label / reviewer
+    /// / reviewedBy). Their presence on a Review section flips it from queue-filtering to
+    /// widened search.
+    var isScoping: Bool {
+        switch self {
+        case .repository(_, let repos):
+            return repos.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        case .author(_, let login):
+            return !login.trimmingCharacters(in: .whitespaces).isEmpty
+        case .assignee(_, let login):
+            return !login.trimmingCharacters(in: .whitespaces).isEmpty
+        case .label(_, let name):
+            return !name.trimmingCharacters(in: .whitespaces).isEmpty
+        case .reviewer(_, let login):
+            return !login.trimmingCharacters(in: .whitespaces).isEmpty
+        case .reviewedBy(_, let login):
+            return !login.trimmingCharacters(in: .whitespaces).isEmpty
+        case .prStatus, .ciStatus, .draft, .hasMergeConflict, .reviewedByMeState:
+            return false
+        }
+    }
+
+    /// Conditions whose evaluation requires per-PR metadata not fetched for outside-queue rows.
+    /// On widened Review sections these are display-only — the editor flags them with a warning
+    /// and the runtime ignores them (matcher isn't run on widened sections).
+    var requiresFetchedMetadata: Bool {
+        switch self {
+        case .ciStatus, .hasMergeConflict, .reviewedByMeState:
+            return true
+        case .prStatus, .author, .assignee, .repository, .label, .reviewer, .draft, .reviewedBy:
+            return false
         }
     }
 }
@@ -404,6 +458,18 @@ struct SectionMatcher {
                 }
                 let has = values.contains(state)
                 return includesEval(op: op, inSet: has)
+            case .reviewedBy(let op, let login):
+                // `reviewedBy` is a scoping condition — sections carrying it widen to a remote
+                // search and the matcher isn't run for them. For arbitrary logins we have no
+                // local signal; the only login we can answer for is the viewer (`@me`), via the
+                // existing `reviewState` lookup.
+                let resolved = resolveLogin(login, viewerLogin: viewerLogin)
+                guard let me = viewerLogin,
+                      resolved.caseInsensitiveCompare(me) == .orderedSame else {
+                    return false
+                }
+                let actuallyReviewed = reviewState != nil
+                return op == .is_ ? actuallyReviewed : !actuallyReviewed
             }
         }
     }
@@ -489,12 +555,98 @@ extension GitbarSection {
                     let qualifier = trimmed.contains(" ") ? "\"\(trimmed)\"" : trimmed
                     parts.append(op == .includes ? "label:\(qualifier)" : "-label:\(qualifier)")
                     hasScoping = true
-                case .reviewer, .ciStatus, .draft, .hasMergeConflict, .reviewedByMeState:
-                    // Not expressible in the issue search API; local matcher will evaluate if applicable.
+                case .reviewer, .ciStatus, .draft, .hasMergeConflict, .reviewedByMeState,
+                     .reviewedBy:
+                    // Either not expressible in the issue search API, or not exposed on the
+                    // Issues tab editor; local matcher will evaluate if applicable.
                     break
                 }
             }
             if !hasScoping { parts.append("assignee:@me") }
+            if !hasState { parts.append("state:open") }
+            parts.append("sort:updated-desc")
+            return parts.joined(separator: " ")
+        }
+    }
+}
+
+// MARK: - Remote search translation (review tab, widened)
+
+extension GitbarSection {
+    /// Translates a Review-tab section's filters into per-section PR-search queries.
+    /// Only emitted when the section has a scoping condition (`hasScopingCondition`); otherwise
+    /// the section continues to filter the local review queue. Filters within a widened section
+    /// that lack their own scoping qualifier fall back to `review-requested:@me` so the
+    /// non-scoped filter still represents the user's review queue. Defaults to `state:open`.
+    func remoteReviewSearchQueries() -> [String] {
+        guard tab == .review, hasScopingCondition else { return [] }
+        return filters.map { filter in
+            var parts: [String] = ["type:pr"]
+            var hasScoping = false
+            var hasState = false
+            for cond in filter.conditions {
+                switch cond {
+                case .prStatus(let op, let values):
+                    let wanted: Set<SectionPRStatusValue> = Set(values.map { v -> SectionPRStatusValue in
+                        switch v {
+                        case .merging, .merged, .closed: return .closed
+                        case .open: return .open
+                        }
+                    })
+                    let target = op == .includes
+                        ? wanted
+                        : Set<SectionPRStatusValue>([.open, .closed]).subtracting(wanted)
+                    hasState = true
+                    if target == [.open] {
+                        parts.append("state:open")
+                    } else if target == [.closed] {
+                        parts.append("state:closed")
+                    }
+                case .author(let op, let login):
+                    let value = login.trimmingCharacters(in: .whitespaces)
+                    guard !value.isEmpty else { break }
+                    parts.append(op == .is_ ? "author:\(value)" : "-author:\(value)")
+                    hasScoping = true
+                case .assignee(let op, let login):
+                    if SectionMatcher.isUnassignedSentinel(login) {
+                        parts.append(op == .includes ? "no:assignee" : "assignee:*")
+                        hasScoping = true
+                    } else {
+                        let value = login.trimmingCharacters(in: .whitespaces)
+                        guard !value.isEmpty else { break }
+                        parts.append(op == .includes ? "assignee:\(value)" : "-assignee:\(value)")
+                        hasScoping = true
+                    }
+                case .repository(let op, let repos):
+                    for repo in repos where !repo.trimmingCharacters(in: .whitespaces).isEmpty {
+                        parts.append(op == .includes ? "repo:\(repo)" : "-repo:\(repo)")
+                        hasScoping = true
+                    }
+                case .label(let op, let name):
+                    let trimmed = name.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { break }
+                    let qualifier = trimmed.contains(" ") ? "\"\(trimmed)\"" : trimmed
+                    parts.append(op == .includes ? "label:\(qualifier)" : "-label:\(qualifier)")
+                    hasScoping = true
+                case .reviewer(let op, let login):
+                    let value = login.trimmingCharacters(in: .whitespaces)
+                    guard !value.isEmpty else { break }
+                    parts.append(op == .includes ? "review-requested:\(value)" : "-review-requested:\(value)")
+                    hasScoping = true
+                case .draft(let isDraft):
+                    parts.append(isDraft ? "draft:true" : "draft:false")
+                case .reviewedBy(let op, let login):
+                    let value = login.trimmingCharacters(in: .whitespaces)
+                    guard !value.isEmpty else { break }
+                    parts.append(op == .is_ ? "reviewed-by:\(value)" : "-reviewed-by:\(value)")
+                    hasScoping = true
+                case .ciStatus, .hasMergeConflict, .reviewedByMeState:
+                    // Not expressible in the issue-search API — runtime ignores these on widened
+                    // sections and the editor surfaces a warning row.
+                    break
+                }
+            }
+            if !hasScoping { parts.append("review-requested:@me") }
             if !hasState { parts.append("state:open") }
             parts.append("sort:updated-desc")
             return parts.joined(separator: " ")
