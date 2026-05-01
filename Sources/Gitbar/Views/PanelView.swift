@@ -864,12 +864,42 @@ struct PanelView: View {
 
     private func count(for t: PanelTab) -> Int {
         switch t {
-        case .all:    return store.myPRs.count + store.reviewRequests.count + store.issues.count
-        case .mine:   return store.myPRs.count
-        case .review: return store.reviewRequests.count
-        case .issues: return store.issues.count
-        case .stats:  return 0
+        case .all:
+            var ids = Set<Int>()
+            ids.formUnion(store.myPRs.map(\.id))
+            ids.formUnion(store.reviewRequests.map(\.id))
+            ids.formUnion(store.reviewedByMePRs.map(\.id))
+            ids.formUnion(store.issues.map(\.id))
+            ids.formUnion(customSectionRowIDs(in: [.review, .issues]))
+            return ids.count
+        case .mine:
+            return store.myPRs.count
+        case .review:
+            var ids = Set<Int>()
+            ids.formUnion(store.reviewRequests.map(\.id))
+            ids.formUnion(store.reviewedByMePRs.map(\.id))
+            ids.formUnion(customSectionRowIDs(in: [.review]))
+            return ids.count
+        case .issues:
+            var ids = Set<Int>()
+            ids.formUnion(store.issues.map(\.id))
+            ids.formUnion(customSectionRowIDs(in: [.issues]))
+            return ids.count
+        case .stats:
+            return 0
         }
+    }
+
+    private func customSectionRowIDs(in tabs: [PanelTab]) -> Set<Int> {
+        var ids = Set<Int>()
+        for tab in tabs {
+            for section in store.sections(for: tab) {
+                if let rows = store.customSectionRows[section.id] {
+                    ids.formUnion(rows.map(\.id))
+                }
+            }
+        }
+        return ids
     }
 
     private var showMine:   Bool { tab == .all || tab == .mine }
