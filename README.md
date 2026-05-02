@@ -73,8 +73,4 @@ Fine-grained token:
 
 ## Roadmap
 
-Current release is an MVP. Planned improvements:
-
-- [ ] merge and mark-ready actions in-app
-- [ ] failing CI section (check runs)
-- [ ] historical stats over time (instead of current snapshot only)
+Current release is an MVP. Planned improvements are tracked on the [issues tab](https://github.com/brunokiafuka/gitbar/issues).
