@@ -169,7 +169,7 @@ struct SectionsManagerView: View {
             if section.isDefault {
                 pill("Default", color: Theme.blue)
             }
-            if section.contributesToBadge {
+            if section.effectiveContributesToBadge {
                 pill("Badge", color: Theme.amber)
             }
             visibilityMenu(for: section)

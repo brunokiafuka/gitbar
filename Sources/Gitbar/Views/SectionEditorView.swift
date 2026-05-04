@@ -62,7 +62,7 @@ struct SectionEditorView: View {
             _name = State(initialValue: section.name)
             _icon = State(initialValue: section.icon)
             _visibility = State(initialValue: section.visibility)
-            _contributesToBadge = State(initialValue: section.contributesToBadge)
+            _contributesToBadge = State(initialValue: section.effectiveContributesToBadge)
             let existing = section.filters.map { FilterDraft(from: $0, tab: mode.tab) }
             _filters = State(initialValue: existing.isEmpty ? [FilterDraft()] : existing)
         }
@@ -391,7 +391,17 @@ struct SectionEditorView: View {
                     .font(.system(size: 11.5))
             }
             .toggleStyle(.checkbox)
+            .disabled(!badgeToggleEditable)
+            if !badgeToggleEditable {
+                Text("This section is informational only — the ball is in the author's court, so it doesn't count toward badges.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.meta)
+            }
         }
+    }
+
+    private var badgeToggleEditable: Bool {
+        mode.section?.canEditContributesToBadge ?? true
     }
 
     @ViewBuilder
