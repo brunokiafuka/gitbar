@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gitbar, your GitHub work in the menu bar</title>
+    <meta
+      name="description"
+      content="Gitbar is a personal queue for your GitHub work: your PRs, the reviews you owe, and the issues assigned to you. macOS menu bar, native Swift, free."
+    />
+    <meta name="author" content="Bruno Kiafuka" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="canonical" href="https://bkiafuka.com/gitbar/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Gitbar" />
+    <meta
+      property="og:title"
+      content="Gitbar, your GitHub work in the menu bar"
+    />
+    <meta
+      property="og:description"
+      content="A personal queue for what you need to act on across repos. Your PRs, reviews, and assigned issues, one click from the menu bar."
+    />
+    <meta property="og:url" content="https://bkiafuka.com/gitbar/" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@bruno_kiafuka" />
+    <meta name="twitter:creator" content="@bruno_kiafuka" />
+    <meta
+      name="twitter:title"
+      content="Gitbar, your GitHub work in the menu bar"
+    />
+    <meta
+      name="twitter:description"
+      content="A personal queue for what you need to act on across repos. Your PRs, reviews, and assigned issues, one click from the menu bar."
+    />
+
+    <link rel="icon" type="image/png" href="assets/img/logo.png" />
+    <link rel="stylesheet" href="assets/css/styles.css" />
+  </head>
+  <body>
+    <nav class="top">
+      <div class="wrap nav-inner">
+        <a class="brand" href="./">
+          <span class="brand-logo"
+            ><img src="assets/img/logo.png" alt="Gitbar logo"
+          /></span>
+          gitbar
+        </a>
+        <span class="nav-spacer"></span>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a
+            href="https://github.com/brunokiafuka/gitbar"
+            target="_blank"
+            rel="noopener"
+            >GitHub <span style="color: var(--fg-4)">↗</span></a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <div class="banner">
+      <div class="wrap banner-inner">
+        <span class="pill">v0.2.1</span>
+        <span>Now available via Homebrew · macOS 14+</span>
+        <a
+          class="banner-link"
+          href="https://github.com/brunokiafuka/gitbar/releases"
+          target="_blank"
+          rel="noopener"
+          >View release →</a
+        >
+      </div>
+    </div>
+
+    <section class="hero">
+      <div class="wrap">
+        <h1>Your GitHub work,<br /><em>quietly waiting in the menu.</em></h1>
+        <p class="lead">
+          A personal queue for what you need to act on across repos. Your PRs,
+          the reviews you owe, the issues assigned to you. One click from the
+          menu bar.
+        </p>
+
+        <div class="install" id="install">
+          <div class="install-tabs">
+            <button class="install-tab active" data-tab="brew">brew</button>
+            <button class="install-tab" data-tab="source">source</button>
+            <button class="install-tab" data-tab="sh">install.sh</button>
+          </div>
+          <div class="install-body" id="install-body">
+            <span class="prompt">$</span>
+            <code id="install-cmd"
+              >brew tap brunokiafuka/gitbar
+              https://github.com/brunokiafuka/gitbar &amp;&amp; brew install
+              gitbar</code
+            >
+            <button class="copy-btn" id="copy-btn">copy</button>
+          </div>
+        </div>
+
+        <div class="hero-foot">
+          <span>macOS 14 or newer</span>
+          <span>~6 MB universal binary</span>
+          <span>No analytics, no telemetry</span>
+          <span>Free and open source</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- features -->
+    <section id="features" class="reveal">
+      <div class="wrap">
+        <span class="section-tag">what it does</span>
+        <h2 class="section-h" style="max-width: 620px">
+          One panel. The work that's actually yours.
+        </h2>
+        <p
+          style="
+            color: var(--fg-2);
+            max-width: 60ch;
+            margin: 0 0 36px;
+            font-size: 15px;
+          "
+        >
+          Only the rows where you're the owner, reviewer, or assignee. Nothing
+          else.
+        </p>
+
+        <div class="feat-grid">
+          <div class="feat">
+            <div class="feat-num">01 / mine</div>
+            <h3 class="feat-h">Your open PRs</h3>
+            <p class="feat-p">
+              Every PR you authored, across every repo your token sees. CI,
+              review state, diff size, one line each.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-num">02 / review</div>
+            <h3 class="feat-h">Reviews you owe</h3>
+            <p class="feat-p">
+              PRs assigned to you for review. Sorted oldest first so nothing
+              rots.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-num">03 / issues</div>
+            <h3 class="feat-h">Assigned issues</h3>
+            <p class="feat-p">
+              Issues with your handle on them. Labels, repo, last updated. Click
+              jumps to GitHub.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-num">04 / stats</div>
+            <h3 class="feat-h">Your pace, today vs this week</h3>
+            <p class="feat-p">
+              PRs merged, reviewed, issues closed, commits. Plus a 24-hour
+              activity chart and your typical merge time.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-num">05 / sections</div>
+            <h3 class="feat-h">Custom sections per tab</h3>
+            <p class="feat-p">
+              Build your own filters: Drafts, Blocked on CI, Waiting on author.
+              Set badges, collapse, reorder.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-num">06 / native</div>
+            <h3 class="feat-h">Pure Swift, pure menu bar</h3>
+            <p class="feat-p">
+              SwiftUI. Keyboard-first:
+              <span class="mono" style="color: var(--fg)">⌘1–5</span> tabs,
+              <span class="mono" style="color: var(--fg)">↵</span> open,
+              <span class="mono" style="color: var(--fg)">⌘R</span> refresh. No
+              Electron in your dock.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- real screenshots -->
+    <section class="reveal">
+      <div class="wrap">
+        <span class="section-tag">screenshots</span>
+        <h2 class="section-h">The real thing.</h2>
+        <p
+          style="
+            color: var(--fg-2);
+            max-width: 60ch;
+            margin: 0 0 32px;
+            font-size: 15px;
+          "
+        >
+          v0.2.1 on macOS 14. Click any row to jump to GitHub.
+        </p>
+
+        <div class="shots">
+          <figure>
+            <img src="assets/img/shot-main.png" alt="All tab" />
+            <figcaption><strong>All tab</strong>, your full queue</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/img/shot-stats.png" alt="Stats tab" />
+            <figcaption>
+              <strong>Stats</strong>, pace today vs this week
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="assets/img/shot-sections.png" alt="Manage sections" />
+            <figcaption>
+              <strong>Manage sections</strong>, your filters by tab
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- final cta -->
+    <section class="cta reveal">
+      <div class="wrap">
+        <h2>Stop scrolling notifications.</h2>
+        <p>Install. Paste a token. Your queue lives in the menu bar.</p>
+
+        <div class="install">
+          <div class="install-body">
+            <span class="prompt">$</span>
+            <code>brew install brunokiafuka/gitbar/gitbar</code>
+            <button
+              class="copy-btn"
+              data-copy="brew install brunokiafuka/gitbar/gitbar"
+            >
+              copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <div class="foot-row">
+          <a class="brand" href="./" style="color: var(--fg)">
+            <span class="brand-logo"
+              ><img src="assets/img/logo.png" alt=""
+            /></span>
+            gitbar
+          </a>
+          <span class="foot-spacer"></span>
+          <a
+            href="https://github.com/brunokiafuka/gitbar"
+            target="_blank"
+            rel="noopener"
+            >GitHub ↗</a
+          >
+          <a
+            href="https://github.com/brunokiafuka/gitbar/releases"
+            target="_blank"
+            rel="noopener"
+            >Releases</a
+          >
+          <a
+            href="https://github.com/brunokiafuka/gitbar/issues"
+            target="_blank"
+            rel="noopener"
+            >Issues</a
+          >
+          <a
+            href="https://deepwiki.com/brunokiafuka/gitbar"
+            target="_blank"
+            rel="noopener"
+            >Docs</a
+          >
+        </div>
+        <div class="foot-meta">
+          <span>© 2026 Bruno Kiafuka</span>
+          <span>Made for Mac</span>
+          <span>v0.2.1</span>
+        </div>
+      </div>
+    </footer>
+
+    <script src="assets/js/main.js" defer></script>
+  </body>
+</html>
