@@ -8,3 +8,5 @@ Package.resolved
 # flo — per-dev config
 .flo/
 
+# marketing site
+site/node_modules/

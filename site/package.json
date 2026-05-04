@@ -1,0 +1,13 @@
+{
+  "name": "gitbar-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gitbar marketing site",
+  "scripts": {
+    "start": "serve .",
+    "dev": "serve . --listen 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.6"
+  }
+}
