@@ -177,96 +177,84 @@ struct PanelView: View {
         return "\(tab.rawValue)|\(store.myPRs.map(\.id))|\(store.reviewRequests.map(\.id))|\(store.reviewedByMePRs.map(\.id))|\(store.issues.map(\.id))|\(store.sections(for: .mine).map(\.id.uuidString))|\(store.sections(for: .review).map(\.id.uuidString))|\(store.sections(for: .issues).map(\.id.uuidString))|\(customRowIds)"
     }
 
-    private let allTabPreviewLimit = 5
-
     private var navigableItems: [PanelListEntry] {
         switch tab {
         case .stats:
             return []
         case .all:
             var rows: [PanelListEntry] = []
-            rows.append(contentsOf: store.myPRs.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-m-\($0.id)", htmlURL: $0.htmlUrl) })
-            rows.append(contentsOf: store.reviewRequests.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-r-\($0.id)", htmlURL: $0.htmlUrl) })
-            rows.append(contentsOf: store.issues.prefix(allTabPreviewLimit).map { PanelListEntry(id: "all-i-\($0.id)", htmlURL: $0.htmlUrl) })
+            rows.append(contentsOf: allTabPullRequests.map { PanelListEntry(id: "all-pr-\($0.id)", htmlURL: $0.htmlUrl) })
+            rows.append(contentsOf: allTabIssues.map { PanelListEntry(id: "all-iss-\($0.id)", htmlURL: $0.htmlUrl) })
             return rows
-        case .mine:
-            return sectionEntries(for: .mine, sourceRows: store.myPRs)
-        case .review:
-            return sectionEntries(for: .review, sourceRows: store.reviewTabSourceRows)
-        case .issues:
-            return sectionEntries(for: .issues, sourceRows: store.issues)
+        case .mine, .review, .issues:
+            return sectionEntries(for: tab)
         }
     }
 
-    private func sectionEntries(for tab: PanelTab, sourceRows: [GHIssue]) -> [PanelListEntry] {
+    /// Deduped, recency-sorted union of actionable PRs across Mine + Review.
+    /// Drives the flat "Pull requests" group on the All tab.
+    private var allTabPullRequests: [GHIssue] {
+        var seen = Set<Int>()
+        var out: [GHIssue] = []
+        for row in store.actionableRows(in: .mine) where seen.insert(row.id).inserted { out.append(row) }
+        for row in store.actionableRows(in: .review) where seen.insert(row.id).inserted { out.append(row) }
+        return out.sorted { $0.updated > $1.updated }
+    }
+
+    /// Recency-sorted actionable issues. Drives the flat "Issues" group on the All tab.
+    private var allTabIssues: [GHIssue] {
+        store.actionableRows(in: .issues).sorted { $0.updated > $1.updated }
+    }
+
+    /// Best-available review-state for a row in the merged All-tab list.
+    /// Mine PRs use the user's own aggregated review state; reviewed-by-me PRs use the
+    /// viewer's own most-recent review. Returning `nil` matches the existing review-queue rendering.
+    private func allTabReviewState(for row: GHIssue) -> (state: String?, isViewer: Bool) {
+        if let s = store.myPRReviewState[row.id] { return (s, false) }
+        if let s = store.viewerReviewState[row.id] { return (s, true) }
+        return (nil, false)
+    }
+
+    private func sectionEntries(for tab: PanelTab) -> [PanelListEntry] {
         var items: [PanelListEntry] = []
-        for sectionRows in renderedSections(for: tab, sourceRows: sourceRows) {
+        for sectionRows in renderedSections(for: tab) {
             guard !sectionRows.section.collapsed else { continue }
             items.append(contentsOf: sectionRows.rows.map {
                 PanelListEntry(id: "sec-\(sectionRows.section.id.uuidString)-\($0.id)", htmlURL: $0.htmlUrl)
             })
         }
-        items.append(contentsOf: unmatchedRows(for: tab, sourceRows: sourceRows).map {
+        items.append(contentsOf: unmatchedRows(for: tab).map {
             PanelListEntry(id: "all-\(tab.rawValue)-\($0.id)", htmlURL: $0.htmlUrl)
         })
         return items
     }
 
-    private func renderedSections(for tab: PanelTab, sourceRows: [GHIssue]) -> [TabSectionRows] {
+    private func renderedSections(for tab: PanelTab) -> [TabSectionRows] {
         store.sections(for: tab)
             .filter { $0.visibility != .hidden }
             .map { section in
-                let rows = rowsForSection(section, sourceRows: sourceRows)
-                return TabSectionRows(section: section, rows: sort(rows, by: section.sort))
+                TabSectionRows(section: section, rows: sort(store.rows(for: section), by: section.sort))
             }
             .filter { !$0.rows.isEmpty }
     }
 
-    /// Rows for a single section. Issues-tab sections read remotely-fetched rows from the store
-    /// (each section runs its filters as a GitHub search). Review-tab sections with a scoping
-    /// condition (`hasScopingCondition`) widen to the same per-section search and likewise read
-    /// from `customSectionRows`. Otherwise PR-tab sections filter `sourceRows` locally via the
-    /// matcher, with the Review tab splitting between the review-request queue and reviewed-by-me
-    /// PRs depending on the section's conditions.
-    private func rowsForSection(_ section: GitbarSection, sourceRows: [GHIssue]) -> [GHIssue] {
-        if section.tab == .issues {
-            return store.customSectionRows[section.id] ?? []
-        }
-        if section.tab == .review, section.hasScopingCondition {
-            return store.customSectionRows[section.id] ?? []
-        }
-        let effectiveSource = sectionSource(for: section, tabSource: sourceRows)
-        return effectiveSource.filter {
-            SectionMatcher.matches(
-                section: section,
-                row: $0,
-                viewerLogin: store.myLogin,
-                metadata: store.prRowMetadata[$0.id],
-                reviewState: reviewState(for: $0, section: section)
-            )
-        }
-    }
-
-    private func sectionSource(for section: GitbarSection, tabSource: [GHIssue]) -> [GHIssue] {
-        guard section.tab == .review else { return tabSource }
-        return section.targetsReviewedByMe ? store.reviewedByMePRs : store.reviewRequests
-    }
-
+    /// Review-state shown next to a row in a section. Reviewed-by-me sections show the viewer's
+    /// own most-recent review; everything else shows the user's PR's aggregated review outcome.
     private func reviewState(for row: GHIssue, section: GitbarSection) -> String? {
         section.targetsReviewedByMe
             ? store.viewerReviewState[row.id]
             : store.myPRReviewState[row.id]
     }
 
-    private func unmatchedRows(for tab: PanelTab, sourceRows: [GHIssue]) -> [GHIssue] {
+    private func unmatchedRows(for tab: PanelTab) -> [GHIssue] {
         let matchedIDs = Set(
-            renderedSections(for: tab, sourceRows: sourceRows)
+            renderedSections(for: tab)
                 .flatMap(\.rows)
                 .map(\.id)
         )
         // On the Review tab, the catch-all only surfaces PRs awaiting your review.
         // Reviewed-by-me PRs only belong in their dedicated sections (e.g. Waiting on author).
-        let eligible: [GHIssue] = tab == .review ? store.reviewRequests : sourceRows
+        let eligible: [GHIssue] = tab == .review ? store.reviewRequests : store.tabSourceRows(tab)
         return eligible.filter { !matchedIDs.contains($0.id) }
     }
 
@@ -509,70 +497,50 @@ struct PanelView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if tab == .all, showMine, !store.myPRs.isEmpty {
-                            SectionHeader(
-                                icon: .gitPullRequest,
-                                title: "My pull requests",
-                                count: store.myPRs.count,
-                                accent: .secondary
-                            )
-                            ForEach(Array(store.myPRs.prefix(allTabPreviewLimit))) { pr in
-                                PRRow(
-                                    pr: pr,
-                                    showAuthor: true,
-                                    reviewState: store.myPRReviewState[pr.id],
-                                    metadata: store.prRowMetadata[pr.id],
-                                    isSelected: isEntrySelected("all-m-\(pr.id)")
+                        if tab == .all {
+                            let prs = allTabPullRequests
+                            let issues = allTabIssues
+                            if !prs.isEmpty {
+                                SectionHeader(
+                                    icon: .gitPullRequest,
+                                    title: "Pull requests",
+                                    count: prs.count,
+                                    accent: .secondary
                                 )
-                                .id("all-m-\(pr.id)")
+                                ForEach(prs) { pr in
+                                    let review = allTabReviewState(for: pr)
+                                    PRRow(
+                                        pr: pr,
+                                        showAuthor: true,
+                                        reviewState: review.state,
+                                        reviewIsViewer: review.isViewer,
+                                        metadata: store.prRowMetadata[pr.id],
+                                        isSelected: isEntrySelected("all-pr-\(pr.id)")
+                                    )
+                                    .id("all-pr-\(pr.id)")
+                                }
                             }
-                            if store.myPRs.count > allTabPreviewLimit, !isHidden(.mine) {
-                                viewAllButton(destination: .mine, remaining: store.myPRs.count - allTabPreviewLimit)
-                            }
-                        }
-                        if tab == .all, showReview, !store.reviewRequests.isEmpty {
-                            SectionHeader(
-                                icon: .circleDotDashed,
-                                title: "Awaiting your review",
-                                count: store.reviewRequests.count,
-                                accent: Theme.amber
-                            )
-                            ForEach(Array(store.reviewRequests.prefix(allTabPreviewLimit))) { pr in
-                                PRRow(
-                                    pr: pr,
-                                    showAuthor: true,
-                                    metadata: store.prRowMetadata[pr.id],
-                                    isSelected: isEntrySelected("all-r-\(pr.id)")
+                            if !issues.isEmpty {
+                                SectionHeader(
+                                    icon: .circleDot,
+                                    title: "Issues",
+                                    count: issues.count,
+                                    accent: Theme.green
                                 )
-                                .id("all-r-\(pr.id)")
-                            }
-                            if store.reviewRequests.count > allTabPreviewLimit, !isHidden(.review) {
-                                viewAllButton(destination: .review, remaining: store.reviewRequests.count - allTabPreviewLimit)
-                            }
-                        }
-                        if tab == .all, showIssues, !store.issues.isEmpty {
-                            SectionHeader(
-                                icon: .circleDot,
-                                title: "Assigned issues",
-                                count: store.issues.count,
-                                accent: Theme.green
-                            )
-                            ForEach(Array(store.issues.prefix(allTabPreviewLimit))) { issue in
-                                IssueRow(issue: issue, isSelected: isEntrySelected("all-i-\(issue.id)"))
-                                    .id("all-i-\(issue.id)")
-                            }
-                            if store.issues.count > allTabPreviewLimit, !isHidden(.issues) {
-                                viewAllButton(destination: .issues, remaining: store.issues.count - allTabPreviewLimit)
+                                ForEach(issues) { issue in
+                                    IssueRow(issue: issue, isSelected: isEntrySelected("all-iss-\(issue.id)"))
+                                        .id("all-iss-\(issue.id)")
+                                }
                             }
                         }
                         if tab == .mine {
-                            sectionDrivenList(tab: .mine, sourceRows: store.myPRs, showAuthor: true)
+                            sectionDrivenList(tab: .mine, showAuthor: true)
                         }
                         if tab == .review {
-                            sectionDrivenList(tab: .review, sourceRows: store.reviewTabSourceRows, showAuthor: true)
+                            sectionDrivenList(tab: .review, showAuthor: true)
                         }
                         if tab == .issues {
-                            sectionDrivenIssues(tab: .issues, sourceRows: store.issues)
+                            sectionDrivenIssues(tab: .issues)
                         }
                         Color.clear.frame(height: 6)
                     }
@@ -598,8 +566,8 @@ struct PanelView: View {
     }
 
     @ViewBuilder
-    private func sectionDrivenList(tab: PanelTab, sourceRows: [GHIssue], showAuthor: Bool) -> some View {
-        let sections = renderedSections(for: tab, sourceRows: sourceRows)
+    private func sectionDrivenList(tab: PanelTab, showAuthor: Bool) -> some View {
+        let sections = renderedSections(for: tab)
         ForEach(sections) { sectionRows in
             sectionHeader(tab: tab, section: sectionRows.section, count: sectionRows.rows.count)
             if !sectionRows.section.collapsed {
@@ -617,7 +585,7 @@ struct PanelView: View {
             }
         }
 
-        let unmatched = unmatchedRows(for: tab, sourceRows: sourceRows)
+        let unmatched = unmatchedRows(for: tab)
         if !unmatched.isEmpty {
             SectionHeader(
                 icon: .circleDotDashed,
@@ -639,8 +607,8 @@ struct PanelView: View {
     }
 
     @ViewBuilder
-    private func sectionDrivenIssues(tab: PanelTab, sourceRows: [GHIssue]) -> some View {
-        let sections = renderedSections(for: tab, sourceRows: sourceRows)
+    private func sectionDrivenIssues(tab: PanelTab) -> some View {
+        let sections = renderedSections(for: tab)
         ForEach(sections) { sectionRows in
             sectionHeader(tab: tab, section: sectionRows.section, count: sectionRows.rows.count)
             if !sectionRows.section.collapsed {
@@ -654,7 +622,7 @@ struct PanelView: View {
             }
         }
 
-        let unmatched = unmatchedRows(for: tab, sourceRows: sourceRows)
+        let unmatched = unmatchedRows(for: tab)
         if !unmatched.isEmpty {
             SectionHeader(
                 icon: .circleDotDashed,
@@ -672,28 +640,6 @@ struct PanelView: View {
         }
     }
 
-    private func viewAllButton(destination: PanelTab, remaining: Int) -> some View {
-        Button {
-            switchToTab(destination)
-        } label: {
-            HStack(spacing: 6) {
-                Text("View all \(destination.label.lowercased()) (\(remaining) more)")
-                    .font(.system(size: 10.5, weight: .medium))
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9.5, weight: .semibold))
-            }
-            .foregroundStyle(Theme.blue)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 6)
-        .padding(.top, 2)
-        .padding(.bottom, 4)
-    }
-
     private func sectionHeader(tab: PanelTab, section: GitbarSection, count: Int) -> some View {
         HStack(spacing: 6) {
             if let icon = section.icon, !icon.isEmpty {
@@ -703,7 +649,7 @@ struct PanelView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
-            if section.contributesToBadge {
+            if section.effectiveContributesToBadge {
                 Text("\(count)")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -862,49 +808,7 @@ struct PanelView: View {
             )
     }
 
-    private func count(for t: PanelTab) -> Int {
-        switch t {
-        case .all:
-            var ids = Set<Int>()
-            ids.formUnion(store.myPRs.map(\.id))
-            ids.formUnion(store.reviewRequests.map(\.id))
-            ids.formUnion(store.reviewedByMePRs.map(\.id))
-            ids.formUnion(store.issues.map(\.id))
-            ids.formUnion(customSectionRowIDs(in: [.review, .issues]))
-            return ids.count
-        case .mine:
-            return store.myPRs.count
-        case .review:
-            var ids = Set<Int>()
-            ids.formUnion(store.reviewRequests.map(\.id))
-            ids.formUnion(store.reviewedByMePRs.map(\.id))
-            ids.formUnion(customSectionRowIDs(in: [.review]))
-            return ids.count
-        case .issues:
-            var ids = Set<Int>()
-            ids.formUnion(store.issues.map(\.id))
-            ids.formUnion(customSectionRowIDs(in: [.issues]))
-            return ids.count
-        case .stats:
-            return 0
-        }
-    }
-
-    private func customSectionRowIDs(in tabs: [PanelTab]) -> Set<Int> {
-        var ids = Set<Int>()
-        for tab in tabs {
-            for section in store.sections(for: tab) {
-                if let rows = store.customSectionRows[section.id] {
-                    ids.formUnion(rows.map(\.id))
-                }
-            }
-        }
-        return ids
-    }
-
-    private var showMine:   Bool { tab == .all || tab == .mine }
-    private var showReview: Bool { tab == .all || tab == .review }
-    private var showIssues: Bool { tab == .all || tab == .issues }
+    private func count(for t: PanelTab) -> Int { store.actionableCount(for: t) }
 
     private var isEmpty: Bool {
         let customRowsForTab: (PanelTab) -> Int = { t in
@@ -915,7 +819,7 @@ struct PanelView: View {
         let issuesCustomRows = customRowsForTab(.issues)
         let reviewCustomRows = customRowsForTab(.review)
         return
-            (tab == .all    && store.myPRs.isEmpty && store.reviewRequests.isEmpty && store.issues.isEmpty) ||
+            (tab == .all    && store.actionableCount(for: .all) == 0) ||
             (tab == .mine   && store.myPRs.isEmpty) ||
             (tab == .review && store.reviewRequests.isEmpty && store.reviewedByMePRs.isEmpty && reviewCustomRows == 0) ||
             (tab == .issues && store.issues.isEmpty && issuesCustomRows == 0)

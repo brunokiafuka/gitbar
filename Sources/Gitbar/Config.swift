@@ -60,9 +60,28 @@ enum Config {
                         break
                     }
                 }
+                // Older configs (or accidental editor toggles) may have set this section to
+                // contribute to the badge. The runtime now treats it as non-actionable, so
+                // normalize the stored value to match.
+                if review[idx].contributesToBadge {
+                    review[idx].contributesToBadge = false
+                    changed = true
+                }
             }
             if changed {
                 sections[.review] = review
+                root.sections = sections
+                dirty = true
+            }
+            // Upgrade existing default "Assigned issues" to contribute to the badge.
+            // Older seeds wrote it with `contributesToBadge: false`, which left the Issues
+            // tab badge stuck at 0. Only flip the seeded default; respect user overrides.
+            var issues = sections[.issues] ?? []
+            if let idx = issues.firstIndex(where: {
+                $0.id == GitbarSection.assignedIssuesDefaultID && $0.isDefault && !$0.contributesToBadge
+            }) {
+                issues[idx].contributesToBadge = true
+                sections[.issues] = issues
                 root.sections = sections
                 dirty = true
             }

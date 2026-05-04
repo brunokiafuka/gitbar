@@ -219,6 +219,21 @@ struct GitbarSection: Codable, Identifiable, Equatable, Sendable {
     var hasScopingCondition: Bool {
         filters.contains { f in f.conditions.contains(where: { $0.isScoping }) }
     }
+
+    /// Some default sections are non-actionable by definition — the ball is in someone
+    /// else's court — and must never feed badge counts even if a stored config flips the
+    /// flag on. Today: the seeded "Waiting on author". Count/chip-render paths read this
+    /// so a stale config or accidental toggle can't pull these back into the badge.
+    var effectiveContributesToBadge: Bool {
+        if id == GitbarSection.waitingOnAuthorDefaultID { return false }
+        return contributesToBadge
+    }
+
+    /// UI gate for the editor's badge toggle. Mirrors the runtime lock so we don't expose
+    /// a control that has no effect.
+    var canEditContributesToBadge: Bool {
+        id != GitbarSection.waitingOnAuthorDefaultID
+    }
 }
 
 extension SectionCondition {
@@ -260,6 +275,8 @@ extension SectionCondition {
 extension GitbarSection {
     /// Stable id for the seeded "Waiting on author" section so settings can locate it after edits.
     static let waitingOnAuthorDefaultID = UUID(uuidString: "D1D49A31-7B2E-4A07-8F2C-7E2A5E6E6E01")!
+    /// Stable id for the seeded "Assigned issues" section so migrations can locate it after edits.
+    static let assignedIssuesDefaultID = UUID(uuidString: "D1D49A31-7B2E-4A07-8F2C-7E2A5E6E6E03")!
 
     static func seededDefaults() -> [PanelTab: [GitbarSection]] {
         [
@@ -375,13 +392,13 @@ extension GitbarSection {
     static func seededIssues() -> [GitbarSection] {
         [
             GitbarSection(
-                id: UUID(),
+                id: assignedIssuesDefaultID,
                 name: "Assigned issues",
                 tab: .issues,
                 repos: .defaults,
                 filters: [SectionFilter(conditions: [.prStatus(op: .includes, values: [.open])])],
                 visibility: .visible,
-                contributesToBadge: false,
+                contributesToBadge: true,
                 sort: .updatedDesc,
                 collapsed: false,
                 order: 0,

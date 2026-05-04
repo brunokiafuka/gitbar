@@ -68,9 +68,10 @@ final class Store: ObservableObject {
         myPRs.filter { myPRReviewState[$0.id] == "CHANGES_REQUESTED" }
     }
 
-    var badgeCount: Int {
-        myPRs.count + reviewRequests.count + issues.count
-    }
+    /// Aggregate count of actionable PRs/issues — the union of rows from every visible
+    /// section (across all tabs) whose `contributesToBadge` is on. Drives the menu-bar
+    /// tray icon. Same source as the panel's tab badges so both surfaces agree.
+    var badgeCount: Int { actionableCount(for: .all) }
 
     /// Union of review-requested and reviewed-by-me PRs (deduped by id, request wins).
     var reviewTabSourceRows: [GHIssue] {
@@ -79,6 +80,89 @@ final class Store: ObservableObject {
         for pr in reviewRequests where seen.insert(pr.id).inserted { out.append(pr) }
         for pr in reviewedByMePRs where seen.insert(pr.id).inserted { out.append(pr) }
         return out
+    }
+
+    /// Per-tab data source for section-driven layouts.
+    func tabSourceRows(_ tab: PanelTab) -> [GHIssue] {
+        switch tab {
+        case .mine:        return myPRs
+        case .review:      return reviewTabSourceRows
+        case .issues:      return issues
+        case .all, .stats: return []
+        }
+    }
+
+    /// Rows belonging to a section, matching the panel's render logic exactly:
+    /// remote-fetched rows for issues + scoped review sections, otherwise the matcher
+    /// against the appropriate local queue.
+    func rows(for section: GitbarSection) -> [GHIssue] {
+        if section.tab == .issues {
+            return customSectionRows[section.id] ?? []
+        }
+        if section.tab == .review, section.hasScopingCondition {
+            return customSectionRows[section.id] ?? []
+        }
+        let source: [GHIssue] = section.tab == .review
+            ? (section.targetsReviewedByMe ? reviewedByMePRs : reviewRequests)
+            : tabSourceRows(section.tab)
+        return source.filter {
+            SectionMatcher.matches(
+                section: section,
+                row: $0,
+                viewerLogin: myLogin,
+                metadata: prRowMetadata[$0.id],
+                reviewState: section.targetsReviewedByMe
+                    ? viewerReviewState[$0.id]
+                    : myPRReviewState[$0.id]
+            )
+        }
+    }
+
+    /// Union of row IDs from every section in `tab` that contributes to the badge.
+    /// Hidden sections are skipped — they're not visible to the user, so they don't count.
+    private func actionableRowIDs(in tab: PanelTab) -> Set<Int> {
+        guard tab != .all, tab != .stats else { return [] }
+        var ids = Set<Int>()
+        for section in sections(for: tab)
+            where section.effectiveContributesToBadge && section.visibility != .hidden
+        {
+            ids.formUnion(rows(for: section).map(\.id))
+        }
+        return ids
+    }
+
+    /// Deduped actionable rows for `tab`, in the order they appear across the contributing
+    /// sections. The All tab uses this to render a flat "Pull requests" / "Issues" listing
+    /// without re-implementing the matcher.
+    func actionableRows(in tab: PanelTab) -> [GHIssue] {
+        guard tab != .all, tab != .stats else { return [] }
+        var seen = Set<Int>()
+        var out: [GHIssue] = []
+        for section in sections(for: tab)
+            where section.effectiveContributesToBadge && section.visibility != .hidden
+        {
+            for row in rows(for: section) where seen.insert(row.id).inserted {
+                out.append(row)
+            }
+        }
+        return out
+    }
+
+    /// Tab-level actionable count. `.all` unions across mine/review/issues so a PR that
+    /// surfaces in two places (e.g. a custom Review section + Mine) is only counted once.
+    func actionableCount(for tab: PanelTab) -> Int {
+        switch tab {
+        case .all:
+            var ids = Set<Int>()
+            ids.formUnion(actionableRowIDs(in: .mine))
+            ids.formUnion(actionableRowIDs(in: .review))
+            ids.formUnion(actionableRowIDs(in: .issues))
+            return ids.count
+        case .stats:
+            return 0
+        case .mine, .review, .issues:
+            return actionableRowIDs(in: tab).count
+        }
     }
 
     func refresh() {
