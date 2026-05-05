@@ -64,7 +64,7 @@ If you already use the [GitHub CLI](https://cli.github.com), Gitbar will reuse t
 
 The token stays in `gh`'s own keychain entry; Gitbar reads it via `gh auth token` and only stores it in `~/.gitbar/config.json` for the app's own use. Required scope is `repo`, which Gitbar verifies against `GET /user` before saving.
 
-### Paste a personal access token
+### Paste a personal access token (better for fine-grained access)
 
 If you don't use `gh`, create a token manually.
 
