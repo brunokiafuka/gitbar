@@ -90,7 +90,7 @@ struct PRRow: View {
 
                     if showAuthor {
                         Text("·").foregroundStyle(Theme.faint.opacity(0.9))
-                        AssigneeChip(login: pr.user.login)
+                        AssigneeChip(login: pr.user.login, avatarUrl: pr.user.avatarUrl)
                     }
 
                     if metadata?.hasMergeConflict == true {
@@ -241,9 +241,14 @@ struct IssueRow: View {
                     let assignees = issue.assignees ?? []
                     dotSeparator
                     if let first = assignees.first {
-                        AssigneeChip(login: first.login)
                         if assignees.count > 1 {
-                            OverflowPill(count: assignees.count - 1)
+                            HStack(spacing: 4) {
+                                AssigneeChip(login: first.login, avatarUrl: first.avatarUrl)
+                                OverflowPill(count: assignees.count - 1)
+                            }
+                            .tooltip(assignees.map { "@\($0.login)" }.joined(separator: ", "))
+                        } else {
+                            AssigneeChip(login: first.login, avatarUrl: first.avatarUrl)
                         }
                     } else {
                         UnassignedChip()

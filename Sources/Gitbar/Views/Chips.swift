@@ -40,6 +40,7 @@ struct AssigneeChip: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var store: Store
     let login: String
+    var avatarUrl: String? = nil
 
     private var displayText: String {
         if let me = store.myLogin, login.caseInsensitiveCompare(me) == .orderedSame {
@@ -49,12 +50,16 @@ struct AssigneeChip: View {
     }
 
     var body: some View {
-        Text(displayText)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Theme.surfaceHi(colorScheme), in: RoundedRectangle(cornerRadius: 4))
+        HStack(spacing: 4) {
+            AvatarView(url: avatarUrl, login: login, size: 13)
+            Text(displayText)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 2)
+        .padding(.trailing, 6)
+        .padding(.vertical, 1)
+        .background(Theme.surfaceHi(colorScheme), in: Capsule(style: .continuous))
     }
 }
 
