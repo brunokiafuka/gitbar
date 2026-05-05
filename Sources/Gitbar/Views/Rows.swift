@@ -51,6 +51,7 @@ struct StateChip: View {
 
 struct PRRow: View {
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var store: Store
     let pr: GHIssue
     let showAuthor: Bool
     /// Latest review aggregate for your own PRs (`CHANGES_REQUESTED`, `APPROVED`, …).
@@ -146,6 +147,28 @@ struct PRRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+        .background(RightAnchoredContextMenuPresenter(makeMenu: makeContextMenu))
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ActionMenuItem(title: "Open in GitHub", systemImage: "arrow.up.right.square") {
+            openInBrowser()
+        })
+        if store.aiReviewers.any {
+            menu.addItem(.separator())
+            if store.aiReviewers.claude {
+                menu.addItem(ActionMenuItem(title: "Review with Claude", systemImage: "terminal") {
+                    AIReviewLauncher.review(pr: pr, with: .claude)
+                })
+            }
+            if store.aiReviewers.codex {
+                menu.addItem(ActionMenuItem(title: "Review with Codex", systemImage: "terminal") {
+                    AIReviewLauncher.review(pr: pr, with: .codex)
+                })
+            }
+        }
+        return menu
     }
 
     private var draftBadge: some View {
@@ -208,6 +231,80 @@ struct PRRow: View {
 
     private func openInBrowser() {
         if let u = URL(string: pr.htmlUrl) { NSWorkspace.shared.open(u) }
+    }
+}
+
+private struct RightAnchoredContextMenuPresenter: NSViewRepresentable {
+    let makeMenu: () -> NSMenu
+
+    func makeNSView(context: Context) -> RightAnchoredContextMenuView {
+        let view = RightAnchoredContextMenuView()
+        view.makeMenu = makeMenu
+        return view
+    }
+
+    func updateNSView(_ nsView: RightAnchoredContextMenuView, context: Context) {
+        nsView.makeMenu = makeMenu
+    }
+}
+
+private final class RightAnchoredContextMenuView: NSView {
+    var makeMenu: (() -> NSMenu)?
+    private var rightClickMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshMonitor()
+    }
+
+    deinit {
+        if let rightClickMonitor {
+            NSEvent.removeMonitor(rightClickMonitor)
+        }
+    }
+
+    private func refreshMonitor() {
+        if let rightClickMonitor {
+            NSEvent.removeMonitor(rightClickMonitor)
+            self.rightClickMonitor = nil
+        }
+
+        guard window != nil else { return }
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, event.window === window else { return event }
+
+            let point = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(point) else { return event }
+
+            self.showMenu()
+            return nil
+        }
+    }
+
+    private func showMenu() {
+        guard let menu = makeMenu?(), !menu.items.isEmpty else { return }
+        let anchor = NSPoint(x: bounds.maxX - 1, y: bounds.maxY)
+        menu.popUp(positioning: nil, at: anchor, in: self)
+    }
+}
+
+private final class ActionMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, systemImage: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+        image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func run() {
+        handler()
     }
 }
 

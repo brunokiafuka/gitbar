@@ -72,6 +72,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Gitbar opens Terminal.app to run AI review commands on a PR diff.</string>
 ${ICON_PLIST_ENTRY}</dict>
 </plist>
 PLIST

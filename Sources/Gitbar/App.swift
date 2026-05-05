@@ -38,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        Task { @MainActor in await store.refreshAIReviewers() }
+        store.refreshInstalledTerminals()
+
         updater.start()
 
         // ImageRenderer often yields nil on the first pass; refresh once the run loop has ticked.
@@ -49,7 +52,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshBadge() }
+            Task { @MainActor in
+                self?.refreshBadge()
+                await self?.store.refreshAIReviewers()
+                self?.store.refreshInstalledTerminals()
+            }
         }
 
         NotificationCenter.default.addObserver(

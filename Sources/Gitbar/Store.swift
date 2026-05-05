@@ -33,6 +33,12 @@ final class Store: ObservableObject {
     /// Cached result of `gh auth status`. Drives the "Sign in with GitHub CLI"
     /// affordance in the empty state and Settings.
     @Published var ghCLIStatus: GHCLIAuth.Status = .notInstalled
+    /// Which AI review CLIs gitbar found on the user's PATH. Drives the
+    /// "Review with …" entries in the PR row context menu.
+    @Published var aiReviewers: AIReviewers = .none
+    /// Terminal emulators present on the system (Terminal.app is always
+    /// included since macOS ships it). Drives the Settings picker.
+    @Published var installedTerminals: Set<TerminalApp> = [.terminal]
     /// One-shot flag set when the launch-time auto-import succeeds. Cleared by
     /// `PanelView` after the banner is shown / dismissed.
     @Published var didAutoImportFromCLI = false
@@ -282,6 +288,23 @@ final class Store: ObservableObject {
     func refreshGHCLIStatus() async {
         let status = await GHCLIAuth.status()
         self.ghCLIStatus = status
+    }
+
+    /// Probes `claude` / `codex` on the user's PATH and publishes the result.
+    /// Called on launch and on focus regain to catch installs done while
+    /// gitbar is running.
+    func refreshAIReviewers() async {
+        self.aiReviewers = await AIReviewers.detect()
+    }
+
+    /// Probes installed terminal emulators by bundle ID. Cheap (LaunchServices
+    /// lookup); called on launch and on focus regain.
+    func refreshInstalledTerminals() {
+        var found: Set<TerminalApp> = [.terminal]
+        for app in TerminalApp.allCases where app.isInstalled() {
+            found.insert(app)
+        }
+        self.installedTerminals = found
     }
 
     /// Launch-time silent import. Only runs when no token is stored. On

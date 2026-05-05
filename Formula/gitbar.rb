@@ -52,6 +52,7 @@ class Gitbar < Formula
           <key>LSMinimumSystemVersion</key><string>14.0</string>
           <key>LSUIElement</key><true/>
           <key>NSHighResolutionCapable</key><true/>
+          <key>NSAppleEventsUsageDescription</key><string>Gitbar opens Terminal.app to run AI review commands on a PR diff.</string>
           <key>CFBundleIconFile</key><string>AppIcon</string>
       </dict>
       </plist>
