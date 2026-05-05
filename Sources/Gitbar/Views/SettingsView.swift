@@ -7,6 +7,8 @@ struct SettingsView: View {
 
     @State private var tokenField: String = ""
     @State private var tokenVisible = false
+    @State private var showCLISignIn = false
+    @State private var cliBusy = false
     @AppStorage("gitbar.notify.reviewRequests") private var notifyReviews = true
     @AppStorage("gitbar.notify.ci") private var notifyCI = true
     @AppStorage("gitbar.notify.changesRequested") private var notifyChangesRequested = true
@@ -67,6 +69,8 @@ struct SettingsView: View {
             }
 
             Section("Personal access token") {
+                ghCLIRow
+
                 HStack(spacing: 6) {
                     TokenField(
                         text: $tokenField,
@@ -234,6 +238,107 @@ struct SettingsView: View {
         .onAppear {
             tokenField = store.token ?? ""
             launchAtLogin = LaunchAtLogin.isEnabled
+        }
+        .task {
+            await store.refreshGHCLIStatus()
+        }
+        .sheet(isPresented: $showCLISignIn) {
+            CLISignInView(onClose: {
+                showCLISignIn = false
+                tokenField = store.token ?? ""
+            })
+            .environmentObject(store)
+        }
+    }
+
+    @ViewBuilder
+    private var ghCLIRow: some View {
+        switch store.ghCLIStatus {
+        case .notInstalled:
+            HStack(spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.faint)
+                    .frame(width: 22, height: 22)
+                    .background(Theme.faint.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("GitHub CLI not detected")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Install `gh` to skip the manual token paste.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Link("Install", destination: URL(string: "https://cli.github.com")!)
+                    .font(.system(size: 11.5, weight: .medium))
+            }
+            .padding(.vertical, 2)
+        case .authed:
+            HStack(spacing: 10) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.green)
+                    .frame(width: 22, height: 22)
+                    .background(Theme.green.opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("GitHub CLI signed in")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Import the token gh manages for you.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(cliBusy ? "Importing…" : "Import token") {
+                    cliBusy = true
+                    Task {
+                        let ok = await store.importTokenFromGHCLI()
+                        cliBusy = false
+                        if ok {
+                            tokenField = store.token ?? ""
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(cliBusy)
+            }
+            .padding(.vertical, 2)
+        case .installedNotAuthed:
+            HStack(spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.amber)
+                    .frame(width: 22, height: 22)
+                    .background(Theme.amber.opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("GitHub CLI detected")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Not signed in to gh yet — we'll guide you through it.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Sign in via gh") {
+                    showCLISignIn = true
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.vertical, 2)
+        }
+
+        if let err = store.ghCLIErrorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.amber)
+                Text(err)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.vertical, 2)
         }
     }
 
