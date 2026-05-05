@@ -22,7 +22,7 @@ Click any row and it opens on GitHub right away.
 ### What you need
 
 - macOS 14+
-- a GitHub personal access token (see [Authentication](#authentication))
+- a GitHub account — sign in via the GitHub CLI (`gh`) or paste a personal access token (see [Authentication](#authentication))
 
 If you are building from source, also install Xcode Command Line Tools:
 
@@ -53,13 +53,26 @@ The install script builds a release app and puts `Gitbar.app` in `~/Applications
 
 ## Authentication
 
-### Create a token
+Gitbar supports two sign-in paths. Pick the one that fits.
+
+### Sign in with the GitHub CLI (recommended)
+
+If you already use the [GitHub CLI](https://cli.github.com), Gitbar will reuse the credentials it already manages.
+
+- **Already signed in to `gh`?** Launch Gitbar with no token configured and it imports the credential automatically. A green banner confirms which account was used.
+- **Have `gh` installed but not signed in?** Click **Continue with GitHub CLI** in the empty state (or **Sign in via gh** in Settings). Gitbar drives `gh auth login --web` for you, shows the one-time device code, and opens https://github.com/login/device with one click.
+
+The token stays in `gh`'s own keychain entry; Gitbar reads it via `gh auth token` and only stores it in `~/.gitbar/config.json` for the app's own use. Required scope is `repo`, which Gitbar verifies against `GET /user` before saving.
+
+### Paste a personal access token
+
+If you don't use `gh`, create a token manually.
 
 Classic token (fastest path):
 
 - Open [Create new token (classic)](https://github.com/settings/tokens/new?description=Gitbar&scopes=repo)
 - Generate token
-- Paste it into Gitbar Settings
+- Paste it into Gitbar Settings → **Personal access token**
 
 Fine-grained token:
 
@@ -69,7 +82,11 @@ Fine-grained token:
   - Pull requests: Read and write (merge)
   - Issues: Read
   - Metadata: Read
-- Paste token into Gitbar Settings
+- Paste token into Gitbar Settings → **Personal access token**
+
+### Where the token lives
+
+Gitbar stores the token in plaintext at `~/.gitbar/config.json` under `github.token`. Remove it from Settings → **Account** → **Remove**, or delete the file directly.
 
 ## Roadmap
 
