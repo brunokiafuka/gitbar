@@ -32,6 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if store.hasToken {
             store.refresh()
             store.reconfigurePollingFromDefaults()
+        } else {
+            Task { @MainActor in
+                await store.tryAutoImportFromGHCLI()
+            }
         }
 
         updater.start()

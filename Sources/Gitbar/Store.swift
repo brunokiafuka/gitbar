@@ -30,6 +30,15 @@ final class Store: ObservableObject {
     @Published var errorMessage: String?
     @Published var token: String?
     @Published var sectionsByTab: [PanelTab: [GitbarSection]] = [:]
+    /// Cached result of `gh auth status`. Drives the "Sign in with GitHub CLI"
+    /// affordance in the empty state and Settings.
+    @Published var ghCLIStatus: GHCLIAuth.Status = .notInstalled
+    /// One-shot flag set when the launch-time auto-import succeeds. Cleared by
+    /// `PanelView` after the banner is shown / dismissed.
+    @Published var didAutoImportFromCLI = false
+    /// Surfaced by the CLI sign-in flow when `gh` returns a token without the
+    /// `repo` scope, so the Settings UI can render a remediation hint.
+    @Published var ghCLIErrorMessage: String?
 
     /// Stats tab (`StatsLoader` + GitHub Search / events).
     @Published private(set) var statsSnapshot: StatsSnapshot?
@@ -259,10 +268,52 @@ final class Store: ObservableObject {
             statsError = nil
             errorMessage = nil
             lastRefreshed = nil
+            didAutoImportFromCLI = false
+            ghCLIErrorMessage = nil
         }
         reconfigurePollingFromDefaults()
         if !trimmed.isEmpty {
             refresh()
+        }
+    }
+
+    /// Re-runs `gh auth status` and publishes the result. Cheap (sub-second);
+    /// called on launch and when Settings opens.
+    func refreshGHCLIStatus() async {
+        let status = await GHCLIAuth.status()
+        self.ghCLIStatus = status
+    }
+
+    /// Launch-time silent import. Only runs when no token is stored. On
+    /// success, flips `didAutoImportFromCLI` so the panel shows a banner.
+    func tryAutoImportFromGHCLI() async {
+        await refreshGHCLIStatus()
+        guard case .authed = ghCLIStatus else { return }
+        guard !hasToken else { return }
+        do {
+            let token = try await GHCLIAuth.tokenWithScopeCheck()
+            updateToken(token)
+            didAutoImportFromCLI = true
+        } catch {
+            ghCLIErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// Explicit user-initiated import (Settings "Import token" or empty-state
+    /// button when `gh` is already signed in). Returns `true` if the token
+    /// was imported; `false` means the caller should switch to the device
+    /// login flow.
+    func importTokenFromGHCLI() async -> Bool {
+        await refreshGHCLIStatus()
+        guard case .authed = ghCLIStatus else { return false }
+        do {
+            let token = try await GHCLIAuth.tokenWithScopeCheck()
+            ghCLIErrorMessage = nil
+            updateToken(token)
+            return true
+        } catch {
+            ghCLIErrorMessage = error.localizedDescription
+            return false
         }
     }
 

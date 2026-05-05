@@ -129,6 +129,11 @@ struct PanelView: View {
                 tabBar
                     .animation(.easeInOut(duration: 0.16), value: tab)
                 panelDivider
+                if store.didAutoImportFromCLI {
+                    AutoImportBanner()
+                        .environmentObject(store)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -139,6 +144,7 @@ struct PanelView: View {
                 footer
             }
         }
+        .animation(.easeInOut(duration: 0.18), value: store.didAutoImportFromCLI)
     }
 
     private var overlayIdentity: String {
@@ -865,25 +871,115 @@ struct PanelView: View {
 }
 
 struct EmptyTokenState: View {
+    @EnvironmentObject var store: Store
     let onOpenSettings: () -> Void
+
+    @State private var showCLISignIn = false
+    @State private var ghDetected = false
+
+    private var hasGH: Bool { ghDetected }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "key.horizontal")
+            Image(systemName: hasGH ? "terminal.fill" : "key.horizontal")
                 .font(.system(size: 26))
-                .foregroundStyle(Theme.amber)
-            Text("Add a GitHub token")
+                .foregroundStyle(hasGH ? Theme.blue : Theme.amber)
+            Text(hasGH ? "Sign in with GitHub CLI" : "Add a GitHub token")
                 .font(.system(size: 14, weight: .semibold))
-            Text("Gitbar needs a personal access token to read PRs and issues.")
+            Text(hasGH
+                 ? "We detected `gh` on your machine. Use it to sign in without copying a token."
+                 : "Gitbar needs a personal access token to read PRs and issues.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Button("Open settings", action: onOpenSettings)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+
+            if hasGH {
+                VStack(spacing: 6) {
+                    Button {
+                        showCLISignIn = true
+                    } label: {
+                        Label("Continue with GitHub CLI", systemImage: "terminal")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+
+                    Button("Use a token instead", action: onOpenSettings)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button("Open settings", action: onOpenSettings)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .task {
+            await store.refreshGHCLIStatus()
+            ghDetected = store.ghCLIStatus != .notInstalled
+        }
+        .onChange(of: store.ghCLIStatus) { _, new in
+            ghDetected = new != .notInstalled
+        }
+        .sheet(isPresented: $showCLISignIn) {
+            CLISignInView(onClose: { showCLISignIn = false })
+                .environmentObject(store)
+        }
+    }
+}
+
+/// Shown briefly at the top of the panel after a launch-time CLI auto-import.
+struct AutoImportBanner: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Theme.green)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Signed in via GitHub CLI")
+                    .font(.system(size: 12, weight: .semibold))
+                if let login = store.viewer?.login ?? store.myLogin {
+                    Text("@\(login)")
+                        .font(Theme.mono)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    store.didAutoImportFromCLI = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.green.opacity(0.10))
+        .overlay(
+            Rectangle()
+                .fill(Theme.green.opacity(0.25))
+                .frame(height: 1),
+            alignment: .bottom
+        )
+        .task {
+            // Auto-dismiss after ~5s; user can still click X earlier.
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                store.didAutoImportFromCLI = false
+            }
+        }
     }
 }
