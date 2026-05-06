@@ -197,7 +197,7 @@ fi
 ASSET_NAME="gitbar-$NEW.tar.gz"
 ASSET_DIR=$(mktemp -d)
 ASSET_PATH="$ASSET_DIR/$ASSET_NAME"
-echo "→ Building source tarball $ASSET_NAME from $NEW_TAG…"
+echo "→ Building source tarball $ASSET_NAME from ${NEW_TAG}…"
 git archive --format=tar.gz --prefix="gitbar-$NEW/" "$NEW_TAG" -o "$ASSET_PATH"
 
 gh release create "$NEW_TAG" --title "$NEW_TAG" --notes-file "$NOTES_FILE" "$ASSET_PATH"
