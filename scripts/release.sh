@@ -16,6 +16,7 @@ cd "$REPO_ROOT"
 SETTINGS="Sources/Gitbar/Views/SettingsView.swift"
 INSTALL="install"
 FORMULA="Formula/gitbar.rb"
+SITE="site/index.html"
 
 for f in "$SETTINGS" "$INSTALL" "$FORMULA"; do
   if [ ! -f "$f" ]; then
@@ -123,6 +124,16 @@ grep -q "^VERSION=\"$NEW\"$" "$INSTALL" \
   || { echo "✗ Failed to bump version in $INSTALL." >&2; exit 1; }
 
 git add "$SETTINGS" "$INSTALL"
+
+if [ -f "$SITE" ] && grep -q "v$CURRENT" "$SITE"; then
+  sed_inplace "s/v$CURRENT/v$NEW/g" "$SITE"
+  if grep -q "v$CURRENT" "$SITE"; then
+    echo "✗ Failed to bump v$CURRENT → v$NEW in $SITE." >&2
+    exit 1
+  fi
+  git add "$SITE"
+fi
+
 git commit -m "bump to $NEW"
 git push origin "$BRANCH"
 
@@ -177,23 +188,41 @@ if ! grep -q '[^[:space:]]' "$NOTES_FILE"; then
   exit 1
 fi
 
-gh release create "$NEW_TAG" --title "$NEW_TAG" --notes-file "$NOTES_FILE"
+# --- Source tarball as a release asset ---------------------------------
+# GitHub's auto-generated archive at /archive/refs/tags/<tag>.tar.gz isn't
+# byte-stable: the gzip layer adds non-deterministic metadata, so the sha256
+# can change between fetches and break Homebrew installs. Build our own tarball
+# from the tag and attach it as a release asset — assets are immutable once
+# uploaded, so the formula sha will always match.
+ASSET_NAME="gitbar-$NEW.tar.gz"
+ASSET_DIR=$(mktemp -d)
+ASSET_PATH="$ASSET_DIR/$ASSET_NAME"
+echo "→ Building source tarball $ASSET_NAME from $NEW_TAG…"
+git archive --format=tar.gz --prefix="gitbar-$NEW/" "$NEW_TAG" -o "$ASSET_PATH"
 
-# --- Homebrew formula ---------------------------------------------------
-TARBALL_URL="https://github.com/brunokiafuka/gitbar/archive/refs/tags/$NEW_TAG.tar.gz"
-echo "→ Computing sha256 of $TARBALL_URL…"
-SHA=$(curl -sL --fail "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+gh release create "$NEW_TAG" --title "$NEW_TAG" --notes-file "$NOTES_FILE" "$ASSET_PATH"
+
+ASSET_URL="https://github.com/brunokiafuka/gitbar/releases/download/$NEW_TAG/$ASSET_NAME"
+SHA=$(shasum -a 256 "$ASSET_PATH" | awk '{print $1}')
 if [ -z "$SHA" ] || [ ${#SHA} -ne 64 ]; then
-  echo "✗ Failed to compute sha256 (got '$SHA')." >&2
-  echo "  Tag and release exist; rerun the formula update manually." >&2
+  echo "✗ Failed to compute sha256 of $ASSET_PATH (got '$SHA')." >&2
   exit 1
 fi
 
-sed_inplace "s|archive/refs/tags/v$CURRENT.tar.gz|archive/refs/tags/$NEW_TAG.tar.gz|" "$FORMULA"
-# Replace the first sha256 line in the formula. There's only one at the top level.
+# Verify the uploaded asset matches the local file before pinning the formula.
+echo "→ Verifying uploaded asset sha matches local…"
+REMOTE_SHA=$(curl -sL --fail "$ASSET_URL" | shasum -a 256 | awk '{print $1}')
+if [ "$REMOTE_SHA" != "$SHA" ]; then
+  echo "✗ Uploaded asset sha ($REMOTE_SHA) doesn't match local ($SHA)." >&2
+  echo "  Release exists but the formula was NOT updated. Investigate before retrying." >&2
+  exit 1
+fi
+
+# --- Homebrew formula ---------------------------------------------------
+sed_inplace "s|^  url \".*\"|  url \"$ASSET_URL\"|" "$FORMULA"
 sed_inplace "s|^  sha256 \"[0-9a-f]\{64\}\"|  sha256 \"$SHA\"|" "$FORMULA"
 
-grep -q "$NEW_TAG.tar.gz" "$FORMULA" \
+grep -q "$ASSET_URL" "$FORMULA" \
   || { echo "✗ Formula url did not update." >&2; exit 1; }
 grep -q "$SHA" "$FORMULA" \
   || { echo "✗ Formula sha256 did not update." >&2; exit 1; }
