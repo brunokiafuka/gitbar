@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("gitbar.notify.ci") private var notifyCI = true
     @AppStorage("gitbar.notify.changesRequested") private var notifyChangesRequested = true
     @AppStorage("gitbar.refreshInterval") private var refreshInterval = "60s"
+    @AppStorage(TerminalApp.userDefaultsKey) private var aiReviewTerminal = ""
     @AppStorage(ThemeMode.storageKey) private var appearanceMode = ThemeMode.dark.rawValue
     @AppStorage(PanelTab.all.hiddenStorageKey)    private var hideAll = false
     @AppStorage(PanelTab.mine.hiddenStorageKey)   private var hideMine = false
@@ -23,6 +24,18 @@ struct SettingsView: View {
 
     private var visibleTabCount: Int {
         [hideAll, hideMine, hideReview, hideIssues, hideStats].filter { !$0 }.count
+    }
+
+    private var installedTerminalsSorted: [TerminalApp] {
+        TerminalApp.allCases.filter { store.installedTerminals.contains($0) }
+    }
+
+    /// The terminal we'd actually launch given the current selection. Mirrors
+    /// `TerminalApp.effective` but reads from `@AppStorage` so the subtitle
+    /// updates as the user picks.
+    private var effectiveTerminal: TerminalApp {
+        let chosen = TerminalApp(rawValue: aiReviewTerminal) ?? .terminal
+        return store.installedTerminals.contains(chosen) ? chosen : .terminal
     }
 
     /// Classic PAT: pre-fills note + **repo** scope (pull requests, issues, metadata on repos you can access).
@@ -207,6 +220,26 @@ struct SettingsView: View {
                 .onChange(of: appearanceMode) { _, new in
                     ThemeMode.apply(ThemeMode(rawValue: new) ?? .system)
                 }
+
+                if store.aiReviewers.any {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("AI review terminal")
+                            Text("Opens in \(effectiveTerminal.displayName)")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $aiReviewTerminal) {
+                            Text("System default").tag("")
+                            ForEach(installedTerminalsSorted) { app in
+                                Text(app.displayName).tag(app.rawValue)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 220)
+                    }
+                }
             }
 
             Section("App") {
@@ -241,6 +274,8 @@ struct SettingsView: View {
         }
         .task {
             await store.refreshGHCLIStatus()
+            await store.refreshAIReviewers()
+            store.refreshInstalledTerminals()
         }
         .sheet(isPresented: $showCLISignIn) {
             CLISignInView(onClose: {
