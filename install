@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="Gitbar"
 BUNDLE_ID="com.brunokiafuka.gitbar"
-VERSION="0.2.2"
+VERSION="0.2.3"
 INSTALL_DIR="${HOME}/Applications"
 BUNDLE="${INSTALL_DIR}/${APP_NAME}.app"
 ICON_SRC="Resources/AppIcon.png"
