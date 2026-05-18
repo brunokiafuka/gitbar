@@ -2,7 +2,7 @@
 const tabs = document.querySelectorAll('.install-tab');
 const cmd = document.getElementById('install-cmd');
 const tabCmds = {
-  brew: 'brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar && brew install gitbar',
+  brew: 'brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar && brew install --cask gitbar',
   source: 'git clone https://github.com/brunokiafuka/gitbar.git && cd gitbar && ./install',
   sh: 'curl -fsSL https://raw.githubusercontent.com/brunokiafuka/gitbar/main/install | bash',
 };
