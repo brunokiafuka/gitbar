@@ -41,7 +41,7 @@ final class Updater: ObservableObject {
         Task { await check() }
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.check() }
+            Task { @MainActor [weak self] in await self?.check() }
         }
     }
 

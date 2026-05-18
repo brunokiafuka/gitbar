@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ThemeMode.apply(ThemeMode.stored)
         syncAppearance()
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in self?.syncAppearance() }
+            Task { @MainActor [weak self] in self?.syncAppearance() }
         }
 
         if store.hasToken {
@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshBadge() }
+            Task { @MainActor [weak self] in self?.refreshBadge() }
         }
 
         NotificationCenter.default.addObserver(
@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshBadge() }
+            Task { @MainActor [weak self] in self?.refreshBadge() }
         }
 
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in

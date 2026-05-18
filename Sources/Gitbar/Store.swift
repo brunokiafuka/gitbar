@@ -414,7 +414,7 @@ final class Store: ObservableObject {
     func startPolling(every seconds: TimeInterval) {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor [weak self] in self?.refresh() }
         }
     }
 
