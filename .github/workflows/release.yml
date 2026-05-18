@@ -1,0 +1,96 @@
+name: Build cask asset
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Resolve version
+        id: ver
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal binary
+        run: swift build -c release --disable-sandbox --arch arm64 --arch x86_64
+
+      - name: Assemble Gitbar.app
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP_NAME="Gitbar"
+          BUNDLE_ID="com.brunokiafuka.gitbar"
+          BIN=".build/apple/Products/Release/gitbar"
+          BUNDLE="build/${APP_NAME}.app"
+
+          if [[ ! -f "$BIN" ]]; then
+            echo "Expected universal binary at $BIN" >&2
+            exit 1
+          fi
+
+          mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
+          cp "$BIN" "${BUNDLE}/Contents/MacOS/${APP_NAME}"
+
+          ICONSET="$(mktemp -d)/AppIcon.iconset"
+          mkdir -p "$ICONSET"
+          sips -z 16 16     Resources/AppIcon.png --out "$ICONSET/icon_16x16.png"      >/dev/null
+          sips -z 32 32     Resources/AppIcon.png --out "$ICONSET/icon_16x16@2x.png"   >/dev/null
+          sips -z 32 32     Resources/AppIcon.png --out "$ICONSET/icon_32x32.png"      >/dev/null
+          sips -z 64 64     Resources/AppIcon.png --out "$ICONSET/icon_32x32@2x.png"   >/dev/null
+          sips -z 128 128   Resources/AppIcon.png --out "$ICONSET/icon_128x128.png"    >/dev/null
+          sips -z 256 256   Resources/AppIcon.png --out "$ICONSET/icon_128x128@2x.png" >/dev/null
+          sips -z 256 256   Resources/AppIcon.png --out "$ICONSET/icon_256x256.png"    >/dev/null
+          sips -z 512 512   Resources/AppIcon.png --out "$ICONSET/icon_256x256@2x.png" >/dev/null
+          sips -z 512 512   Resources/AppIcon.png --out "$ICONSET/icon_512x512.png"    >/dev/null
+          sips -z 1024 1024 Resources/AppIcon.png --out "$ICONSET/icon_512x512@2x.png" >/dev/null
+          iconutil -c icns "$ICONSET" -o "${BUNDLE}/Contents/Resources/AppIcon.icns"
+
+          cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key><string>${APP_NAME}</string>
+              <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+              <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+              <key>CFBundleVersion</key><string>${VERSION}</string>
+              <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+              <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>LSMinimumSystemVersion</key><string>14.0</string>
+              <key>LSUIElement</key><true/>
+              <key>NSHighResolutionCapable</key><true/>
+              <key>CFBundleIconFile</key><string>AppIcon</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Zip Gitbar.app
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd build
+          # ditto preserves resource forks / extended attrs; produces a cleaner
+          # zip than `zip -r` for .app bundles.
+          ditto -c -k --sequesterRsrc --keepParent "Gitbar.app" "Gitbar-${VERSION}.app.zip"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" "build/Gitbar-${VERSION}.app.zip" --clobber

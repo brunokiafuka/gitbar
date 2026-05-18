@@ -16,9 +16,10 @@ cd "$REPO_ROOT"
 SETTINGS="Sources/Gitbar/Views/SettingsView.swift"
 INSTALL="install"
 FORMULA="Formula/gitbar.rb"
+CASK="Casks/gitbar.rb"
 SITE="site/index.html"
 
-for f in "$SETTINGS" "$INSTALL" "$FORMULA"; do
+for f in "$SETTINGS" "$INSTALL" "$FORMULA" "$CASK"; do
   if [ ! -f "$f" ]; then
     echo "✗ Missing $f — release layout has changed; update scripts/release.sh." >&2
     exit 1
@@ -95,7 +96,8 @@ echo "  Edit:    $SETTINGS, $INSTALL"
 echo "  Commit + push to origin/$BRANCH"
 echo "  Tag $NEW_TAG and push tag"
 echo "  Open \$EDITOR for release notes, then publish via gh"
-echo "  Update $FORMULA sha256 from the new tarball, commit + push"
+echo "  Wait for cask workflow to upload Gitbar-$NEW.app.zip"
+echo "  Update $FORMULA + $CASK sha256s, commit + push"
 echo
 printf "Proceed? [y/N] "
 read -r ans
@@ -227,8 +229,50 @@ grep -q "$ASSET_URL" "$FORMULA" \
 grep -q "$SHA" "$FORMULA" \
   || { echo "✗ Formula sha256 did not update." >&2; exit 1; }
 
-git add "$FORMULA"
-git commit -m "update Homebrew formula for $NEW_TAG"
+# --- Cask app-zip asset (built by .github/workflows/release.yml) --------
+# The release workflow triggers on `release: published`, builds Gitbar.app
+# on a macOS runner, and uploads it as Gitbar-<version>.app.zip. Wait for
+# that to appear, then pin the cask sha to it.
+CASK_ASSET_NAME="Gitbar-$NEW.app.zip"
+CASK_ASSET_URL="https://github.com/brunokiafuka/gitbar/releases/download/$NEW_TAG/$CASK_ASSET_NAME"
+echo "→ Waiting for release workflow to upload $CASK_ASSET_NAME (up to 10 min)…"
+DEADLINE=$(( $(date +%s) + 600 ))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  if gh release view "$NEW_TAG" --json assets --jq '.assets[].name' 2>/dev/null \
+     | grep -qx "$CASK_ASSET_NAME"; then
+    break
+  fi
+  sleep 10
+done
+
+if ! gh release view "$NEW_TAG" --json assets --jq '.assets[].name' 2>/dev/null \
+     | grep -qx "$CASK_ASSET_NAME"; then
+  echo "✗ $CASK_ASSET_NAME never appeared on $NEW_TAG. Check the release workflow." >&2
+  echo "  Formula was NOT updated. Investigate, then re-run the cask-pin step manually." >&2
+  exit 1
+fi
+
+CASK_DIR=$(mktemp -d)
+CASK_PATH="$CASK_DIR/$CASK_ASSET_NAME"
+echo "→ Fetching $CASK_ASSET_NAME to compute sha256…"
+curl -sL --fail "$CASK_ASSET_URL" -o "$CASK_PATH" \
+  || { echo "✗ Failed to download $CASK_ASSET_URL" >&2; exit 1; }
+CASK_SHA=$(shasum -a 256 "$CASK_PATH" | awk '{print $1}')
+if [ -z "$CASK_SHA" ] || [ ${#CASK_SHA} -ne 64 ]; then
+  echo "✗ Failed to compute sha256 of $CASK_PATH (got '$CASK_SHA')." >&2
+  exit 1
+fi
+
+sed_inplace "s|^  version \".*\"|  version \"$NEW\"|" "$CASK"
+sed_inplace "s|^  sha256 \"[0-9a-f]\{64\}\"|  sha256 \"$CASK_SHA\"|" "$CASK"
+
+grep -q "version \"$NEW\"" "$CASK" \
+  || { echo "✗ Cask version did not update." >&2; exit 1; }
+grep -q "$CASK_SHA" "$CASK" \
+  || { echo "✗ Cask sha256 did not update." >&2; exit 1; }
+
+git add "$FORMULA" "$CASK"
+git commit -m "update Homebrew formula and cask for $NEW_TAG"
 git push origin "$BRANCH"
 
 echo

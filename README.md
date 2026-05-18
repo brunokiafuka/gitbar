@@ -24,13 +24,19 @@ Click any row and it opens on GitHub right away.
 - macOS 14+
 - a GitHub account — sign in via the GitHub CLI (`gh`) or paste a personal access token (see [Authentication](#authentication))
 
-If you are building from source, also install Xcode Command Line Tools:
+### Install with Homebrew Cask (recommended)
 
 ```bash
-xcode-select --install
+brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar
+brew install --cask gitbar
+open -a Gitbar
 ```
 
-### Install with Homebrew (recommended)
+Ships the prebuilt `Gitbar.app` straight into `/Applications`. No Xcode required.
+
+### Install with Homebrew (build from source)
+
+If you prefer a from-source install (or want the `gitbar` CLI shim), use the formula:
 
 ```bash
 brew tap brunokiafuka/gitbar https://github.com/brunokiafuka/gitbar
@@ -38,9 +44,9 @@ brew install gitbar
 gitbar
 ```
 
-That is it. `gitbar` launches the app.
+This builds with `swift build` and requires the Xcode toolchain.
 
-### Install from source
+### Install from source manually
 
 ```bash
 git clone https://github.com/brunokiafuka/gitbar.git
@@ -49,7 +55,7 @@ cd gitbar
 open "$HOME/Applications/Gitbar.app"
 ```
 
-The install script builds a release app and puts `Gitbar.app` in `~/Applications`.
+The install script builds a release app and puts `Gitbar.app` in `~/Applications`. Requires Xcode Command Line Tools (`xcode-select --install`).
 
 ## Authentication
 
