@@ -1,6 +1,6 @@
 cask "gitbar" do
-  version "0.0.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "0.2.4"
+  sha256 "e25ef1fd30640df73fceccf7b9dfbbb65c73e6030d1ddb632acec388f2b9ac22"
 
   url "https://github.com/brunokiafuka/gitbar/releases/download/v#{version}/Gitbar-#{version}.app.zip"
   name "Gitbar"

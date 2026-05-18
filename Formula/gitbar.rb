@@ -1,8 +1,8 @@
 class Gitbar < Formula
   desc "Native macOS menu bar app for tracking GitHub PRs and issues"
   homepage "https://github.com/brunokiafuka/gitbar"
-  url "https://github.com/brunokiafuka/gitbar/releases/download/v0.2.3/gitbar-0.2.3.tar.gz"
-  sha256 "48acf334d6a755efd04b8fe54fe991367c3761215cd3728dbdf1fe561e08092a"
+  url "https://github.com/brunokiafuka/gitbar/releases/download/v0.2.4/gitbar-0.2.4.tar.gz"
+  sha256 "d371dc43a3d706e2f6ead96e57e9b53c90b1352d777bb77fb7931dc075c0652a"
   head "https://github.com/brunokiafuka/gitbar.git", branch: "main"
 
   depends_on xcode: ["15.0", :build]
