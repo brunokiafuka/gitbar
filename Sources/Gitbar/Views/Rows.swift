@@ -146,6 +146,9 @@ struct PRRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+        .contextMenu {
+            Button("Copy Link") { copyLink(pr.htmlUrl) }
+        }
     }
 
     private var draftBadge: some View {
@@ -290,6 +293,9 @@ struct IssueRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+        .contextMenu {
+            Button("Copy Link") { copyLink(issue.htmlUrl) }
+        }
     }
 
     private var rowBackground: Color {
@@ -303,4 +309,13 @@ struct IssueRow: View {
     private func openInBrowser() {
         if let u = URL(string: issue.htmlUrl) { NSWorkspace.shared.open(u) }
     }
+}
+
+// MARK: - Helpers
+
+/// Copies a URL string to the system pasteboard (used by row context menus).
+func copyLink(_ url: String) {
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setString(url, forType: .string)
 }
